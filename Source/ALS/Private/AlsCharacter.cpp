@@ -45,9 +45,10 @@ AAlsCharacter::AAlsCharacter(const FObjectInitializer& ObjectInitializer) : Supe
 
 		// Improves performance, but velocities of kinematic physical bodies will not be
 		// calculated, so the ragdoll will not inherit the actor's velocity when activated.
-
+		// 关掉这类优化后，kinematic 刚体的速度计算会受影响，
+		// 从而在切换到 ragdoll 时“角色自身速度”不再能正确传递给物理骨骼。
 		// TODO Wait until the FPhysScene_Chaos::UpdateKinematicsOnDeferredSkelMeshes() function will be fixed in future engine versions.
-
+		// 这里是为了避免引擎版本差异导致的骨骼/物理 kinematic 更新时序问题。
 		// GetMesh()->bDeferKinematicBoneUpdate = true;
 	}
 
@@ -57,6 +58,7 @@ AAlsCharacter::AAlsCharacter(const FObjectInitializer& ObjectInitializer) : Supe
 	// Component details can still be accessed from the actor's component hierarchy.
 
 #if WITH_EDITOR
+	//编辑器模式下，Actor拖入Level时，隐藏 Mesh/CapsuleComponent/CharacterMovement 属性
 	StaticClass()->FindPropertyByName(FName{TEXTVIEW("Mesh")})->SetPropertyFlags(CPF_DisableEditOnInstance);
 	StaticClass()->FindPropertyByName(FName{TEXTVIEW("CapsuleComponent")})->SetPropertyFlags(CPF_DisableEditOnInstance);
 	StaticClass()->FindPropertyByName(FName{TEXTVIEW("CharacterMovement")})->SetPropertyFlags(CPF_DisableEditOnInstance);
@@ -66,6 +68,7 @@ AAlsCharacter::AAlsCharacter(const FObjectInitializer& ObjectInitializer) : Supe
 #if WITH_EDITOR
 bool AAlsCharacter::CanEditChange(const FProperty* Property) const
 {
+	// 用于限制编辑器对某些控制旋转相关属性的修改，避免破坏 ALS 的旋转逻辑假设。
 	return Super::CanEditChange(Property) &&
 	       Property->GetFName() != GET_MEMBER_NAME_STRING_VIEW_CHECKED(ThisClass, bUseControllerRotationPitch) &&
 	       Property->GetFName() != GET_MEMBER_NAME_STRING_VIEW_CHECKED(ThisClass, bUseControllerRotationYaw) &&
@@ -75,6 +78,7 @@ bool AAlsCharacter::CanEditChange(const FProperty* Property) const
 
 void AAlsCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
+	// 注册需要复制的“期望状态/输入/目标”字段；这里使用 push-based 并跳过拥有者（COND_SkipOwner）。
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	FDoRepLifetimeParams Parameters;
@@ -98,6 +102,8 @@ void AAlsCharacter::PreRegisterAllComponents()
 {
 	// Set some default values here so that the animation instance and the
 	// camera component can read the most up-to-date values during initialization.
+	// 在组件真正开始注册/初始化前，把期望的旋转/站姿/步态先写入，
+	// 避免动画实例或相机在“初始帧”读到旧值。
 
 	RotationMode = bDesiredAiming ? AlsRotationModeTags::Aiming : DesiredRotationMode;
 	Stance = DesiredStance;
@@ -111,6 +117,7 @@ void AAlsCharacter::PostRegisterAllComponents()
 	Super::PostRegisterAllComponents();
 
 	SetReplicatedViewRotation(Super::GetViewRotation().GetNormalized(), false);
+	// 用当前视角初始化复制用的 ViewRotation，保证后续 network smoothing 的基准一致。
 
 	ViewState.NetworkSmoothing.InitialRotation = ReplicatedViewRotation;
 	ViewState.NetworkSmoothing.TargetRotation = ReplicatedViewRotation;
@@ -122,6 +129,7 @@ void AAlsCharacter::PostRegisterAllComponents()
 	const auto YawAngle{UE_REAL_TO_FLOAT(GetActorRotation().Yaw)};
 
 	SetTargetYawAngle(YawAngle);
+	// 把初始 actor yaw 同步到目标 yaw（用于后续平滑/约束旋转系统）。
 
 	LocomotionState.InputYawAngle = YawAngle;
 	LocomotionState.VelocityYawAngle = YawAngle;
@@ -130,12 +138,14 @@ void AAlsCharacter::PostRegisterAllComponents()
 void AAlsCharacter::PostInitializeComponents()
 {
 	// Make sure the mesh and animation blueprint are ticking after the character so they can access the most up-to-date character state.
+	// tick 先后顺序直接决定动画实例能否读取到“本帧最新”的角色状态。
 
 	GetMesh()->AddTickPrerequisiteActor(this);
 
 	AlsCharacterMovement->OnPhysicsRotation.AddUObject(this, &ThisClass::CharacterMovement_OnPhysicsRotation);
 
 	// Pass current movement settings to the movement component.
+	// movement component 需要在初始化完成后尽快拿到 MovementSettings，避免早期帧行为不一致。
 
 	AlsCharacterMovement->SetMovementSettings(MovementSettings);
 
@@ -157,8 +167,8 @@ void AAlsCharacter::BeginPlay()
 
 	if (GetLocalRole() >= ROLE_AutonomousProxy)
 	{
-		// Teleportation of simulated proxies is detected differently, see
-		// AAlsCharacter::PostNetReceiveLocationAndRotation() and AAlsCharacter::OnRep_ReplicatedBasedMovement().
+		// 这里对 simulated proxies 的“传送/瞬移”检测使用组件 Transform 更新事件，
+		// 避免与基底/复制回包时序冲突。
 
 		GetCapsuleComponent()->TransformUpdated.AddWeakLambda(
 			this, [this](USceneComponent*, const EUpdateTransformFlags, const ETeleportType TeleportType)
@@ -174,6 +184,7 @@ void AAlsCharacter::BeginPlay()
 
 	ViewState.NetworkSmoothing.bEnabled |= IsValid(Settings) &&
 		Settings->View.bEnableNetworkSmoothing && GetLocalRole() == ROLE_SimulatedProxy;
+	// 只有在 simulated proxy 且开启配置时才启用网络平滑，减少无效计算。
 
 	// Update states to use the initial desired values.
 
@@ -192,6 +203,7 @@ void AAlsCharacter::BeginPlay()
 
 void AAlsCharacter::CalcCamera(const float DeltaTime, FMinimalViewInfo& ViewInfo)
 {
+	// 优先让蓝图/ALS 逻辑处理相机（OnCalculateCamera 返回 true 时不再走 Super::CalcCamera）。
 	if (!OnCalculateCamera(DeltaTime, ViewInfo))
 	{
 		Super::CalcCamera(DeltaTime, ViewInfo);
@@ -200,7 +212,7 @@ void AAlsCharacter::CalcCamera(const float DeltaTime, FMinimalViewInfo& ViewInfo
 
 void AAlsCharacter::PostNetReceiveLocationAndRotation()
 {
-	// AActor::PostNetReceiveLocationAndRotation() function is only called on simulated proxies, so there is no need to check roles here.
+	// 该回调只会发生在 simulated proxies，因此 Rotation/Teleport 校正逻辑直接作用于它们。
 
 	const auto PreviousLocation{GetActorLocation()};
 
@@ -211,6 +223,7 @@ void AAlsCharacter::PostNetReceiveLocationAndRotation()
 	Super::PostNetReceiveLocationAndRotation();
 
 	// Detect teleportation of simulated proxies.
+	// 这里用 bSimGravityDisabled 作为“可能的传送信号”，再结合相对/绝对位置差超过阈值来判定。
 
 	auto bTeleported{static_cast<bool>(bSimGravityDisabled)};
 
@@ -231,6 +244,7 @@ void AAlsCharacter::PostNetReceiveLocationAndRotation()
 void AAlsCharacter::OnRep_ReplicatedBasedMovement()
 {
 	// ACharacter::OnRep_ReplicatedBasedMovement() is only called on simulated proxies, so there is no need to check roles here.
+	// ReplicatedBasedMovement 的旋转可能在基底相对空间中，需要根据 MovementBase 重建实际旋转。
 
 	const auto PreviousLocation{GetActorLocation()};
 
@@ -244,6 +258,7 @@ void AAlsCharacter::OnRep_ReplicatedBasedMovement()
 		MovementBaseUtility::GetMovementBaseTransform(ReplicatedBasedMovement.MovementBase, ReplicatedBasedMovement.BoneName,
 		                                              MovementBaseLocation, MovementBaseRotation);
 
+		// 通过“基底旋转的逆 * 角色四元数”，把复制得到的相对旋转转换成 ALS 所需的最终旋转。
 		ReplicatedBasedMovement.Rotation = (MovementBaseRotation.Inverse() * GetActorQuat()).Rotator();
 	}
 	else
@@ -277,6 +292,8 @@ void AAlsCharacter::Tick(const float DeltaTime)
 {
 	DECLARE_SCOPE_CYCLE_COUNTER(TEXT("AAlsCharacter::Tick"), STAT_AAlsCharacter_Tick, STATGROUP_Als)
 	TRACE_CPUPROFILER_EVENT_SCOPE_STR(__FUNCTION__)
+	// 用于 UE 的统计系统，记录本函数 Tick 的 CPU 开销。
+	// 用于 Trace/Profiler，在捕获帧里定位 Tick 的采样区间。
 
 	if (!IsValid(Settings) || !AnimationInstance.IsValid())
 	{
@@ -285,29 +302,44 @@ void AAlsCharacter::Tick(const float DeltaTime)
 	}
 
 	RefreshMovementBase();
-
+	// 更新 movement base（基底）数据，决定基底相对移动/旋转如何影响角色。
 	RefreshMeshProperties();
+	// 根据网络/控制/渲染可见性等条件调整 Mesh tick 与旋转同步策略。
 
 	RefreshInput(DeltaTime);
+	// 使用 DeltaTime 更新输入相关的内部状态，为 locomotion/view/rotation 提供依据。
 
 	RefreshLocomotionEarly();
+	// Locomotion 早期阶段，通常用于计算/准备中间量与目标分支。
 
 	RefreshView(DeltaTime);
+	// 刷新视角相关状态（包含网络平滑与视角相对旋转处理）。
 	RefreshLocomotion();
+	// Locomotion 主阶段，根据当前输入/状态机计算最终移动目标。
 	RefreshGait();
+	// 刷新步态（Gait），在期望与能力/环境限制之间选取最终步态。
 	RefreshRotationMode();
+	// 刷新旋转模式（RotationMode），决定角色朝向采用哪种旋转策略。
 
 	RefreshGroundedRotation(DeltaTime);
+	// 地面旋转刷新（grounded），对 yaw/约束做对应计算。
 	RefreshInAirRotation(DeltaTime);
+	// 空中旋转刷新（in-air），对跳跃/下落分支的朝向进行更新。
 
 	StartMantlingInAir();
+	// 尝试在空中启动攀爬（mantling），依赖状态允许性与 trace 判定。
 	RefreshMantling();
+	// 推进/维护攀爬状态机，使攀爬从开始到结束在多帧连续运行。
 	RefreshRagdolling(DeltaTime);
+	// 推进布娃娃状态机，处理物理切换、约束与恢复条件。
 	RefreshRolling(DeltaTime);
+	// 推进翻滚状态机，更新翻滚相关的动画/物理持续效果。
 
 	Super::Tick(DeltaTime);
+	// 在完成 ALS 自定义刷新后再调用基类 Tick，确保 UE 默认更新也执行。
 
 	RefreshLocomotionLate();
+	// Locomotion 后期收尾阶段，把主阶段的计算结果落到最终可用状态/参数。
 }
 
 void AAlsCharacter::PossessedBy(AController* NewController)
@@ -344,8 +376,8 @@ void AAlsCharacter::RefreshMeshProperties() const
 	const auto bRemoteAutonomousProxy{GetRemoteRole() == ROLE_AutonomousProxy};
 	const auto bLocallyControlled{IsLocallyControlled()};
 
-	// Make sure that the pose is always ticked on the server when the character is controlled
-	// by a remote client, otherwise some problems may arise (such as jitter when rolling).
+	// 当该角色由“远端客户端”控制时（远端拥有 autonomous proxy），服务器端仍需要持续 tick 姿态(pose)，
+	// 否则动画/骨骼与网络修正会不同步，常见表现就是 rolling 等动作时的抖动或时间错位。
 
 	const auto DefaultTickOption{GetClass()->GetDefaultObject<ThisClass>()->GetMesh()->VisibilityBasedAnimTickOption};
 
@@ -355,30 +387,30 @@ void AAlsCharacter::RefreshMeshProperties() const
 			: EVisibilityBasedAnimTickOption::OnlyTickMontagesWhenNotRendered
 	};
 
-	// Keep the default tick option, at least if the target tick option is not required by the plugin to work properly.
-
+	// 即便我们希望更激进地更新动画，也要不超过 Mesh 默认的 tick 策略（避免不必要的性能开销）。
 	GetMesh()->VisibilityBasedAnimTickOption = FMath::Min(TargetTickOption, DefaultTickOption);
 
 	const auto bMeshIsTicking{
 		GetMesh()->bRecentlyRendered || GetMesh()->VisibilityBasedAnimTickOption <= EVisibilityBasedAnimTickOption::AlwaysTickPose
 	};
 
-	// Use absolute mesh rotation to be able to precisely synchronize character rotation
-	// with animations by manually updating the mesh rotation from the animation instance.
+	// 使用绝对网格旋转（absolute mesh rotation）：
+	// Mesh 的旋转将由代码/动画实例直接“按当前角色朝向”去精确同步，
+	// 从而让旋转动画与角色朝向保持一致。
 
-	// This is necessary in cases where the character and the animation instance are ticking
-	// at different frequencies, which leads to desynchronization of rotation animations
-	// with the character rotation, as well as foot sliding when the foot lock is active.
+	// 当角色与动画实例的 tick 频率不一致时（例如网格降频/URO），如果不使用绝对旋转，
+	// 旋转动画可能会和角色朝向出现轻微偏差；脚锁启用时偏差会被放大成“脚滑”。
 
-	// To save performance, use this only when really necessary, such as
-	// when URO is enabled, or for autonomous proxies on the listen server.
+	// 为了节省性能，只在真的需要时开启，例如：
+	// 1) 启用了 URO 导致动画更新降频；或
+	// 2) listen server 上存在远端 autonomous proxy，需要额外确保远端姿态稳定。
 
 	const auto bUROActive{GetMesh()->AnimUpdateRateParams != nullptr && GetMesh()->AnimUpdateRateParams->UpdateRate > 1};
 	const auto bAutonomousProxyOnListenServer{bListenServer && bRemoteAutonomousProxy};
 
-	// Can't use absolute mesh rotation when the character is standing on a rotating object, as it
-	// causes constant rotation jitter. Be careful: although it eliminates jitter in this case, not
-	// using absolute mesh rotation can cause jitter when rotating in place or turning in place.
+	// 当角色站在“会持续转动的基底/物体”上时，不能启用绝对旋转：
+	// 基底带来的相对旋转会被处理方式影响，容易造成持续的旋转抖动。
+	// 这里的选择是在“旋转基底的相对关系”和“旋转动画同步”之间做折中。
 
 	const auto bStandingOnRotatingObject{MovementBase.bHasRelativeRotation};
 
@@ -389,9 +421,11 @@ void AAlsCharacter::RefreshMeshProperties() const
 
 	if (GetMesh()->IsUsingAbsoluteRotation() != bUseAbsoluteRotation)
 	{
+		//SetUsingAbsoluteRotation（旋转是否继承父组件）
+		//SetRelativeRotation_Direct（直接设置相对旋转值，跳过内部的旋转更新逻辑和事件广播。）
+		// 切换 absolute rotation 策略后必须立刻校正 Mesh 的相对旋转，
+		// 否则本次 tick 中 Mesh 使用旧的相对旋转值会导致可见的跳变。
 		GetMesh()->SetUsingAbsoluteRotation(bUseAbsoluteRotation);
-
-		// Instantly update the relative mesh rotation, otherwise it will be incorrect during this tick.
 
 		if (bUseAbsoluteRotation || !IsValid(GetMesh()->GetAttachParent()))
 		{
