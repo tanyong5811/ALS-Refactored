@@ -25,6 +25,8 @@ class ALS_API AAlsCharacter : public ACharacter
 {
 	GENERATED_BODY()
 
+	friend class UAlsAnimationInstance;
+
 protected:
 	// 角色使用的 ALS 移动组件（负责姿态/速度/旋转等核心运动逻辑）。
 	UPROPERTY(BlueprintReadOnly, Category = "Als Character")
@@ -138,6 +140,11 @@ protected:
 	// 用于在制动力/摩擦系数等参数恢复时的定时器句柄。
 	FTimerHandle BrakingFrictionFactorResetTimer;
 
+	// 服务器端转身位移补偿开关：手动触发 TurnInPlace 时启用，结束后关闭。
+	bool bTurnInPlaceCurveOffsetActive{false};
+	// 起转瞬间锁定：将 Modifier 烘焙的「动画第 0 帧 Root 局部」MoveAmount_X/Y 映射到世界水平面（与 RefreshLocomotionCurveOffset 相同：ActorRotation×(0,-90,0) 的 Yaw）。
+	float TurnInPlaceCurveReferenceYaw{0.0f};
+
 public:
 	// 构造函数：使用 ALS 的自定义 movement component 子类。
 	explicit AAlsCharacter(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
@@ -194,6 +201,12 @@ protected:
 private:
 	// 刷新 mesh/动画实例相关的渲染与动画参数。
 	void RefreshMeshProperties() const;
+
+	// 转身 MoveAmount_X/Y（动画第 0 帧 Root 局部）胶囊水平补偿；由 UAlsAnimationInstance::NativePostUpdateAnimation 调用。
+	void RefreshTurnInPlaceCurveOffset();
+
+	// 地面移动时按 MoveAmount_X/Y 补偿胶囊 XY；(Frame/BlendWeight)*DeltaSeconds*PlayRate；PlayRate 来自 UAlsAnimationInstance 的 Standing/CrouchingState；参考偏航为 ActorRotation 组合 -90° Yaw。
+	void RefreshLocomotionCurveOffset();
 
 	// 刷新 movement base（基底）相关数据，用于自定义旋转与相对运动。
 	void RefreshMovementBase();
@@ -624,6 +637,18 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "ALS|Character", Meta = (AdvancedDisplay = "bFireEventIfNoTurnNeeded"))
 	bool RequestTurnInPlaceTowardActor(AActor* Target, bool bFireEventIfNoTurnNeeded = true);
+
+	UFUNCTION(BlueprintCallable, Category = "ALS|Character", Meta = (AdvancedDisplay = "bFireEventIfNoTurnNeeded"))
+	bool RequestTurnInPlaceTowardAngle(float TargetAngle, bool bFireEventIfNoTurnNeeded = true);
+
+private:
+	UFUNCTION(Server, Reliable)
+	void ServerStartTurnInPlace(float TargetYaw, bool bFireEventIfNoTurnNeeded);
+
+	UFUNCTION(NetMulticast, Reliable)
+	void MulticastStartTurnInPlace(float TargetYaw, bool bFireEventIfNoTurnNeeded);
+
+	bool StartTurnInPlaceImplementation(float TargetYaw, bool bFireEventIfNoTurnNeeded);
 
 	// Rolling
 public:

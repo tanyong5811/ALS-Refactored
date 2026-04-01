@@ -34,35 +34,93 @@ bool AAlsCharacter::RequestTurnInPlaceTowardActor(AActor* const Target, const bo
 bool AAlsCharacter::RequestTurnInPlaceTowardWorldLocation(const FVector& TargetWorldLocation,
                                                          const bool bFireEventIfNoTurnNeeded)
 {
+	const FVector ActorLocation{GetActorLocation()};
+	const float TargetYaw{
+		UE_REAL_TO_FLOAT(UKismetMathLibrary::FindLookAtRotation(ActorLocation, TargetWorldLocation).Yaw)
+	};
+
+	return StartTurnInPlaceImplementation(TargetYaw, bFireEventIfNoTurnNeeded);
+}
+
+bool AAlsCharacter::RequestTurnInPlaceTowardAngle(float TargetAngle, bool bFireEventIfNoTurnNeeded /*= true*/)
+{
+	const float ActorYaw{UE_REAL_TO_FLOAT(GetActorRotation().Yaw)};
+	const float TargetYaw{FMath::UnwindDegrees(ActorYaw + TargetAngle)};
+
+	return StartTurnInPlaceImplementation(TargetYaw, bFireEventIfNoTurnNeeded);
+}
+
+bool AAlsCharacter::StartTurnInPlaceImplementation(const float TargetYaw, const bool bFireEventIfNoTurnNeeded)
+{
+	if (GetLocalRole() <= ROLE_SimulatedProxy)
+	{
+		return false;
+	}
+
+	if (GetLocalRole() >= ROLE_Authority)
+	{
+		MulticastStartTurnInPlace(TargetYaw, bFireEventIfNoTurnNeeded);
+	}
+	else
+	{
+		GetCharacterMovement()->FlushServerMoves();
+		ServerStartTurnInPlace(TargetYaw, bFireEventIfNoTurnNeeded);
+	}
+
+	return true;
+}
+
+void AAlsCharacter::ServerStartTurnInPlace_Implementation(const float TargetYaw, const bool bFireEventIfNoTurnNeeded)
+{
+	MulticastStartTurnInPlace(TargetYaw, bFireEventIfNoTurnNeeded);
+}
+
+void AAlsCharacter::MulticastStartTurnInPlace_Implementation(const float TargetYaw, const bool bFireEventIfNoTurnNeeded)
+{
 	auto* const SkelMesh{GetMesh()};
 	if (!IsValid(SkelMesh))
 	{
-		return false;
+		return;
 	}
 
 	auto* const AlsAnim{Cast<UAlsAnimationInstance>(SkelMesh->GetAnimInstance())};
 	if (!IsValid(AlsAnim))
 	{
-		return false;
+		return;
 	}
 
-	const FVector ActorLocation{GetActorLocation()};
-	const float TargetYaw{UE_REAL_TO_FLOAT(UKismetMathLibrary::FindLookAtRotation(ActorLocation, TargetWorldLocation).Yaw)};
 	const float ActorYaw{UE_REAL_TO_FLOAT(GetActorRotation().Yaw)};
 	const float ViewRelativeYaw{FMath::UnwindDegrees(TargetYaw - ActorYaw)};
 
-	SetReplicatedViewRotation(FRotator{0.0f, TargetYaw, 0.0f}, GetLocalRole() == ROLE_AutonomousProxy);
+	SetReplicatedViewRotation(FRotator{0.0f, TargetYaw, 0.0f}, false);
+
+	bTurnInPlaceCurveOffsetActive = true;
+
+	// 与 Locomotion MoveAmount、Animation Modifier（Inverse Transform 到动画第 0 帧 Root）约定一致：用起转时胶囊朝向×网格默认 -90° 作为世界 XY 映射基准。
+	{
+		const FRotator ActorRotation{GetActorRotation()};
+		TurnInPlaceCurveReferenceYaw = UE_REAL_TO_FLOAT(
+			(ActorRotation.Quaternion() * FRotator{0.0f, -90.0f, 0.0f}.Quaternion()).Rotator().Yaw);
+	}
 
 	FOnMontageEnded OnEnded;
 	OnEnded.BindLambda([WeakThis = TWeakObjectPtr<AAlsCharacter>(this)](UAnimMontage* const /*Montage*/, const bool bInterrupted)
 	{
 		if (AAlsCharacter* const Self = WeakThis.Get())
 		{
+			Self->bTurnInPlaceCurveOffsetActive = false;
+			Self->TurnInPlaceCurveReferenceYaw = 0.0f;
 			Self->OnTurnInPlaceMontageFinished.Broadcast(bInterrupted);
 		}
 	});
 
-	return AlsAnim->PlayTurnInPlaceImmediate(ViewRelativeYaw, OnEnded, bFireEventIfNoTurnNeeded);
+	if (!AlsAnim->PlayTurnInPlaceImmediate(ViewRelativeYaw, OnEnded, bFireEventIfNoTurnNeeded) &&
+	    bFireEventIfNoTurnNeeded)
+	{
+		bTurnInPlaceCurveOffsetActive = false;
+		TurnInPlaceCurveReferenceYaw = 0.0f;
+		OnTurnInPlaceMontageFinished.Broadcast(true);
+	}
 }
 
 void AAlsCharacter::StartRolling(const float PlayRate)

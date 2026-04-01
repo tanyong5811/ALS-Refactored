@@ -361,6 +361,17 @@ public:
 
 public:
 	float GetCurveValueClamped01(const FName& CurveName) const;
+
+	// 当前 Turn In Place 蒙太奇在动画侧使用的有效 PlayRate（与 PlayTurnInPlaceImmediate / 排队转身写入的 TurnInPlaceState.PlayRate 一致）。
+	UFUNCTION(BlueprintPure, Category = "ALS|Animation Instance")
+	float GetTurnInPlaceEffectivePlayRate() const { return TurnInPlaceState.PlayRate; }
+
+	// 地面移动曲线补偿：当前 Stance 下 StandingState / CrouchingState 的 PlayRate（由 AnimBP 写入）。
+	UFUNCTION(BlueprintPure, Category = "ALS|Animation Instance")
+	float GetLocomotionCurveOffsetPlayRate() const
+	{
+		return Stance == AlsStanceTags::Crouching ? CrouchingState.PlayRate : StandingState.PlayRate;
+	}
 };
 
 inline UAlsAnimationInstanceSettings* UAlsAnimationInstance::GetSettingsUnsafe() const

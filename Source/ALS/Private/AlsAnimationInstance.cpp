@@ -199,6 +199,10 @@ void UAlsAnimationInstance::NativePostUpdateAnimation()
 	PlayQueuedTurnInPlaceAnimation();
 	StopQueuedTransitionAndTurnInPlaceAnimations();
 
+	// 与当帧 Pose 曲线对齐后再推胶囊（Authority / 状态判断在角色内）。先转身补偿，再地面补偿（转身激活时后者会自行 return）。
+	Character->RefreshTurnInPlaceCurveOffset();
+	Character->RefreshLocomotionCurveOffset();
+
 #if WITH_EDITORONLY_DATA && ENABLE_DRAW_DEBUG
 	if (!bPendingUpdate)
 	{

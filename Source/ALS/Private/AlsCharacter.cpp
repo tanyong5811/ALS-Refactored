@@ -334,6 +334,7 @@ void AAlsCharacter::Tick(const float DeltaTime)
 	// 推进布娃娃状态机，处理物理切换、约束与恢复条件。
 	RefreshRolling(DeltaTime);
 	// 推进翻滚状态机，更新翻滚相关的动画/物理持续效果。
+	// 转身 / 地面 MoveAmount 胶囊补偿在 UAlsAnimationInstance::NativePostUpdateAnimation 中执行，与当帧 Pose 曲线对齐。
 
 	Super::Tick(DeltaTime);
 	// 在完成 ALS 自定义刷新后再调用基类 Tick，确保 UE 默认更新也执行。
@@ -443,6 +444,167 @@ void AAlsCharacter::RefreshMeshProperties() const
 	{
 		AnimationInstance->MarkPendingUpdate();
 	}
+}
+
+void AAlsCharacter::RefreshTurnInPlaceCurveOffset()
+{
+	// 只在服务器执行：由服务器权威移动胶囊，客户端通过复制结果跟随，避免多端各算各的。
+	if (GetLocalRole() < ROLE_Authority || !bTurnInPlaceCurveOffsetActive)
+	{
+		return;
+	}
+
+	auto* const SkelMesh{GetMesh()};
+	if (!IsValid(SkelMesh))
+	{
+		return;
+	}
+
+	auto* const AlsAnim{Cast<UAlsAnimationInstance>(SkelMesh->GetAnimInstance())};
+	if (!IsValid(AlsAnim))
+	{
+		return;
+	}
+
+	static const FName FrameCurveName{TEXTVIEW("Frame")};
+	static const FName BlendWeightCurveName{TEXTVIEW("BlendWeight")};
+	static const FName MoveAmountXCurveName{TEXTVIEW("MoveAmount_X")};
+	static const FName MoveAmountYCurveName{TEXTVIEW("MoveAmount_Y")};
+
+	const float FrameCurve{AlsAnim->GetCurveValue(FrameCurveName)};
+	const float BlendWeight{AlsAnim->GetCurveValue(BlendWeightCurveName)};
+	if (BlendWeight <= UE_SMALL_NUMBER || FrameCurve <= UE_SMALL_NUMBER)
+	{
+		return;
+	}
+
+	const float MoveAmountX{AlsAnim->GetCurveValue(MoveAmountXCurveName)};
+	const float MoveAmountY{AlsAnim->GetCurveValue(MoveAmountYCurveName)};
+
+	const float DeltaSeconds{
+		IsValid(GetWorld()) ? GetWorld()->GetDeltaSeconds() : 0.0f
+	};
+	if (DeltaSeconds <= UE_SMALL_NUMBER)
+	{
+		return;
+	}
+
+	// 位移缩放：Frame/BlendWeight、DeltaSeconds、与本次 Turn In Place 一致的 TurnInPlaceState.PlayRate。
+	const float EffectiveRate{AlsAnim->GetTurnInPlaceEffectivePlayRate()};
+	const float MontagePlayRate{EffectiveRate > UE_SMALL_NUMBER ? EffectiveRate : 1.0f};
+
+	const float DisplacementScale{(FrameCurve / BlendWeight) * DeltaSeconds * MontagePlayRate};
+	const FVector LocalMoveDelta{
+		MoveAmountX * DisplacementScale,
+		MoveAmountY * DisplacementScale,
+		0.0f
+	};
+
+	// MoveAmount 为动画第 0 帧 Root 局部（Modifier Inverse Transform 烘焙）；TurnInPlaceCurveReferenceYaw 在 MulticastStartTurnInPlace 起转时锁定，与 Locomotion 映射一致。
+	const FVector WorldDelta{
+		FRotator{0.0f, TurnInPlaceCurveReferenceYaw, 0.0f}.RotateVector(LocalMoveDelta)
+	};
+
+	// 只补偿 XY：Z 交给 CharacterMovement/地面约束，防止坡地或台阶上出现竖直抖动。
+	FVector HorizontalWorldDelta{WorldDelta};
+	HorizontalWorldDelta.Z = 0.0f;
+
+	// 防止曲线/分段切换导致的异常大位移（瞬时爆冲）。
+	if (HorizontalWorldDelta.SizeSquared() > FMath::Square(80.0f))
+	{
+		return;
+	}
+
+	// 最终把补偿位移施加到胶囊（Sweep=true，避免穿墙）。
+	AddActorWorldOffset(HorizontalWorldDelta, true);
+}
+
+void AAlsCharacter::RefreshLocomotionCurveOffset()
+{
+	// 仅服务器权威推胶囊；转身进行中不叠移动补偿，避免双算。
+	if (GetLocalRole() < ROLE_Authority || bTurnInPlaceCurveOffsetActive)
+	{
+		return;
+	}
+
+	if (LocomotionMode != AlsLocomotionModeTags::Grounded || !LocomotionState.bMoving)
+	{
+		return;
+	}
+
+	auto* const SkelMesh{GetMesh()};
+	if (!IsValid(SkelMesh))
+	{
+		return;
+	}
+
+	auto* const AnimInstance{SkelMesh->GetAnimInstance()};
+	if (!IsValid(AnimInstance))
+	{
+		return;
+	}
+
+	const auto* const AlsAnim{Cast<UAlsAnimationInstance>(AnimInstance)};
+	if (!IsValid(AlsAnim))
+	{
+		return;
+	}
+
+	static const FName FrameCurveName{TEXTVIEW("Frame")};
+	static const FName BlendWeightCurveName{TEXTVIEW("BlendWeight")};
+	static const FName MoveAmountXCurveName{TEXTVIEW("MoveAmount_X")};
+	static const FName MoveAmountYCurveName{TEXTVIEW("MoveAmount_Y")};
+
+	const float FrameCurve{AnimInstance->GetCurveValue(FrameCurveName)};
+	const float BlendWeight{AnimInstance->GetCurveValue(BlendWeightCurveName)};
+	if (BlendWeight <= UE_SMALL_NUMBER || FrameCurve <= UE_SMALL_NUMBER)
+	{
+		return;
+	}
+
+	const float MoveAmountX{AnimInstance->GetCurveValue(MoveAmountXCurveName)};
+	const float MoveAmountY{AnimInstance->GetCurveValue(MoveAmountYCurveName)};
+	if (FMath::IsNearlyZero(MoveAmountX) && FMath::IsNearlyZero(MoveAmountY))
+	{
+		return;
+	}
+
+	const float DeltaSeconds{
+		IsValid(GetWorld()) ? GetWorld()->GetDeltaSeconds() : 0.0f
+	};
+	if (DeltaSeconds <= UE_SMALL_NUMBER)
+	{
+		return;
+	}
+
+	const float PlayRate{FMath::Max(AlsAnim->GetLocomotionCurveOffsetPlayRate(), UE_KINDA_SMALL_NUMBER)};
+
+	const float DisplacementScale{(FrameCurve / BlendWeight) * DeltaSeconds * PlayRate};
+	const FVector LocalMoveDelta{
+		MoveAmountX * DisplacementScale,
+		MoveAmountY * DisplacementScale,
+		0.0f
+	};
+
+	// 用胶囊 ActorRotation 右乘 Yaw -90，与网格默认相对旋转（0,-90,0）对齐局部前向。
+	const FRotator ActorRotation{GetActorRotation()};
+	const float TargetReferenceYaw{
+		UE_REAL_TO_FLOAT((ActorRotation.Quaternion() * FRotator{0.0f, -90.0f, 0.0f}.Quaternion()).Rotator().Yaw)
+	};
+
+	const FVector WorldDelta{
+		FRotator{0.0f, TargetReferenceYaw, 0.0f}.RotateVector(LocalMoveDelta)
+	};
+
+	FVector HorizontalWorldDelta{WorldDelta};
+	HorizontalWorldDelta.Z = 0.0f;
+
+	if (HorizontalWorldDelta.SizeSquared() > FMath::Square(80.0f))
+	{
+		return;
+	}
+
+	AddActorWorldOffset(HorizontalWorldDelta, true);
 }
 
 void AAlsCharacter::RefreshMovementBase()
