@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
 #include "Engine/World.h"
 #include "State/AlsControlRigInput.h"
 #include "State/AlsCrouchingState.h"
@@ -331,6 +332,13 @@ protected:
 public:
 	virtual bool IsTurnInPlaceAllowed();
 
+	// 立即播放原地转向蒙太奇（与自动原地转向使用相同资源/槽位）。ViewRelativeYawAngle 与动画 ViewState.YawAngle 同义。
+	// MontageFinishedDelegate 在蒙太奇结束或被打断时调用；bFireCallbackIfAngleTooSmall 控制「角度已小于阈值不播蒙太奇」时是否仍调用该委托。
+	bool PlayTurnInPlaceImmediate(float ViewRelativeYawAngle, const FOnMontageEnded& MontageFinishedDelegate,
+	                              bool bFireCallbackIfAngleTooSmall = true);
+
+	void EndScriptedTurnInPlace();
+	bool bScriptedTurnInPlaceActive{false};
 protected:
 	UFUNCTION(BlueprintCallable, Category = "ALS|Animation Instance", Meta = (BlueprintThreadSafe))
 	void InitializeTurnInPlace();

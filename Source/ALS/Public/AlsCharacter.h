@@ -10,6 +10,8 @@
 #include "Utility/AlsGameplayTags.h"
 #include "AlsCharacter.generated.h"
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FAlsTurnInPlaceMontageFinishedSignature, bool, bInterrupted);
+
 struct FAlsMantlingParameters;
 struct FAlsMantlingTraceSettings;
 class UAlsCharacterMovementComponent;
@@ -96,7 +98,7 @@ protected:
 		ReplicatedUsing = "OnReplicated_ReplicatedViewRotation")
 	FRotator ReplicatedViewRotation{ForceInit};
 
-	// 视图状态缓存（包含网络平滑/基底相对旋转等处理后的最终值）。
+	// 视图状态缓存（包含网络平滑/基底相对旋转等处理后的最终值）(动画层head/spine/aiming使用)。
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State|Als Character", Transient)
 	FAlsViewState ViewState;
 
@@ -610,6 +612,18 @@ protected:
 
 	// 视角相对目标 yaw 刷新：把当前视角差换算进目标旋转。
 	void RefreshViewRelativeTargetYawAngle();
+
+	// Turn In Place（脚本 / AI）：使用与自动转身相同的蒙太奇与插槽；结束时广播 OnTurnInPlaceMontageFinished（bInterrupted 表示被打断）。
+	// 需在 ViewDirection 旋转模式与第三人称下与 ALS 动画配置一致；建议在行为树中先绑定委托再调用 Request。
+public:
+	UPROPERTY(BlueprintAssignable, Category = "ALS|Character")
+	FAlsTurnInPlaceMontageFinishedSignature OnTurnInPlaceMontageFinished;
+
+	UFUNCTION(BlueprintCallable, Category = "ALS|Character", Meta = (AdvancedDisplay = "bFireEventIfNoTurnNeeded"))
+	bool RequestTurnInPlaceTowardWorldLocation(const FVector& TargetWorldLocation, bool bFireEventIfNoTurnNeeded = true);
+
+	UFUNCTION(BlueprintCallable, Category = "ALS|Character", Meta = (AdvancedDisplay = "bFireEventIfNoTurnNeeded"))
+	bool RequestTurnInPlaceTowardActor(AActor* Target, bool bFireEventIfNoTurnNeeded = true);
 
 	// Rolling
 public:

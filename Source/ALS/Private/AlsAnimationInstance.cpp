@@ -1787,6 +1787,11 @@ void UAlsAnimationInstance::RefreshRotateInPlace()
 
 bool UAlsAnimationInstance::IsTurnInPlaceAllowed()
 {
+	if (!IsValid(Settings) || !Settings->TurnInPlace.bAllowAutomaticTurnInPlace)
+	{
+		return false;
+	}
+
 	return RotationMode == AlsRotationModeTags::ViewDirection && ViewMode != AlsViewModeTags::FirstPerson;
 }
 
@@ -1810,6 +1815,13 @@ void UAlsAnimationInstance::RefreshTurnInPlace()
 
 	if (TurnInPlaceState.bUpdatedThisFrame || !IsValid(Settings))
 	{
+		return;
+	}
+
+	if (bScriptedTurnInPlaceActive)
+	{
+		TurnInPlaceState.bUpdatedThisFrame = true;
+		TurnInPlaceState.ActivationDelay = 0.0f;
 		return;
 	}
 
@@ -1902,6 +1914,121 @@ void UAlsAnimationInstance::RefreshTurnInPlace()
 			PlayQueuedTurnInPlaceAnimation();
 		}
 	}
+}
+
+bool UAlsAnimationInstance::PlayTurnInPlaceImmediate(const float ViewRelativeYawAngle,
+                                                     const FOnMontageEnded& MontageFinishedDelegate,
+                                                     const bool bFireCallbackIfAngleTooSmall)
+{
+	check(IsInGameThread())
+
+	if (!IsValid(Settings) || !IsValid(Character))
+	{
+		return false;
+	}
+
+	const auto AbsYaw{FMath::Abs(ViewRelativeYawAngle)};
+	if (AbsYaw < Settings->TurnInPlace.ViewYawAngleThreshold)
+	{
+		if (bFireCallbackIfAngleTooSmall)
+		{
+			MontageFinishedDelegate.ExecuteIfBound(nullptr, false);
+		}
+
+		return true;
+	}
+
+	if (LocomotionMode != AlsLocomotionModeTags::Grounded)
+	{
+		return false;
+	}
+
+	const auto bTurnLeft{UAlsRotation::RemapAngleForCounterClockwiseRotation(ViewRelativeYawAngle) <= 0.0f};
+
+	UAlsTurnInPlaceSettings* TurnInPlaceSettings{nullptr};
+	FName TurnInPlaceSlotName;
+
+	if (Stance == AlsStanceTags::Standing)
+	{
+		TurnInPlaceSlotName = UAlsConstants::TurnInPlaceStandingSlotName();
+
+		if (AbsYaw < Settings->TurnInPlace.Turn180AngleThreshold)
+		{
+			TurnInPlaceSettings = bTurnLeft ? Settings->TurnInPlace.StandingTurn90Left.Get()
+			                                : Settings->TurnInPlace.StandingTurn90Right.Get();
+		}
+		else
+		{
+			TurnInPlaceSettings = bTurnLeft ? Settings->TurnInPlace.StandingTurn180Left.Get()
+			                                : Settings->TurnInPlace.StandingTurn180Right.Get();
+		}
+	}
+	else if (Stance == AlsStanceTags::Crouching)
+	{
+		TurnInPlaceSlotName = UAlsConstants::TurnInPlaceCrouchingSlotName();
+
+		if (AbsYaw < Settings->TurnInPlace.Turn180AngleThreshold)
+		{
+			TurnInPlaceSettings = bTurnLeft ? Settings->TurnInPlace.CrouchingTurn90Left.Get()
+			                                : Settings->TurnInPlace.CrouchingTurn90Right.Get();
+		}
+		else
+		{
+			TurnInPlaceSettings = bTurnLeft ? Settings->TurnInPlace.CrouchingTurn180Left.Get()
+			                                : Settings->TurnInPlace.CrouchingTurn180Right.Get();
+		}
+	}
+
+	if (!IsValid(TurnInPlaceSettings) || !IsValid(TurnInPlaceSettings->Sequence))
+	{
+		return false;
+	}
+
+	bScriptedTurnInPlaceActive = true;
+
+	const FMontageBlendSettings BlendInSettings{Settings->TurnInPlace.BlendDuration};
+
+	FMontageBlendSettings BlendOutSettings{Settings->TurnInPlace.BlendDuration};
+	BlendOutSettings.BlendMode = EMontageBlendMode::Inertialization;
+
+	auto* const Montage{PlaySlotAnimationAsDynamicMontage_WithBlendSettings(TurnInPlaceSettings->Sequence, TurnInPlaceSlotName,
+	                                                                       BlendInSettings, BlendOutSettings,
+	                                                                       TurnInPlaceSettings->PlayRate, 1, 0.0f)};
+
+	if (!IsValid(Montage))
+	{
+		bScriptedTurnInPlaceActive = false;
+		return false;
+	}
+
+	TurnInPlaceState.PlayRate = TurnInPlaceSettings->PlayRate;
+
+	if (TurnInPlaceSettings->bScalePlayRateByAnimatedTurnAngle)
+	{
+		TurnInPlaceState.PlayRate *= FMath::Abs(ViewRelativeYawAngle / TurnInPlaceSettings->AnimatedTurnAngle);
+	}
+
+	TWeakObjectPtr<UAlsAnimationInstance> WeakSelf(this);
+
+	FOnMontageEnded Ended;
+	Ended.BindLambda([WeakSelf, MontageFinishedDelegate](UAnimMontage* const CompletedMontage, const bool bInterrupted)
+	{
+		if (UAlsAnimationInstance* const Self = WeakSelf.Get())
+		{
+			Self->EndScriptedTurnInPlace();
+		}
+
+		MontageFinishedDelegate.ExecuteIfBound(CompletedMontage, bInterrupted);
+	});
+
+	Montage_SetEndDelegate(Ended, Montage);
+
+	return true;
+}
+
+void UAlsAnimationInstance::EndScriptedTurnInPlace()
+{
+	bScriptedTurnInPlaceActive = false;
 }
 
 void UAlsAnimationInstance::PlayQueuedTurnInPlaceAnimation()
