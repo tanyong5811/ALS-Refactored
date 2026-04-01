@@ -2,7 +2,9 @@
 
 #include "AlsAnimationInstance.h"
 #include "AlsCharacterMovementComponent.h"
+#include "Animation/AnimMontage.h"
 #include "DrawDebugHelpers.h"
+#include "Kismet/KismetMathLibrary.h"
 #include "TimerManager.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -18,6 +20,50 @@
 #include "Utility/AlsMontageUtility.h"
 #include "Utility/AlsRotation.h"
 #include "Utility/AlsVector.h"
+
+bool AAlsCharacter::RequestTurnInPlaceTowardActor(AActor* const Target, const bool bFireEventIfNoTurnNeeded)
+{
+	if (!IsValid(Target))
+	{
+		return false;
+	}
+
+	return RequestTurnInPlaceTowardWorldLocation(Target->GetActorLocation(), bFireEventIfNoTurnNeeded);
+}
+
+bool AAlsCharacter::RequestTurnInPlaceTowardWorldLocation(const FVector& TargetWorldLocation,
+                                                         const bool bFireEventIfNoTurnNeeded)
+{
+	auto* const SkelMesh{GetMesh()};
+	if (!IsValid(SkelMesh))
+	{
+		return false;
+	}
+
+	auto* const AlsAnim{Cast<UAlsAnimationInstance>(SkelMesh->GetAnimInstance())};
+	if (!IsValid(AlsAnim))
+	{
+		return false;
+	}
+
+	const FVector ActorLocation{GetActorLocation()};
+	const float TargetYaw{UE_REAL_TO_FLOAT(UKismetMathLibrary::FindLookAtRotation(ActorLocation, TargetWorldLocation).Yaw)};
+	const float ActorYaw{UE_REAL_TO_FLOAT(GetActorRotation().Yaw)};
+	const float ViewRelativeYaw{FMath::UnwindDegrees(TargetYaw - ActorYaw)};
+
+	SetReplicatedViewRotation(FRotator{0.0f, TargetYaw, 0.0f}, GetLocalRole() == ROLE_AutonomousProxy);
+
+	FOnMontageEnded OnEnded;
+	OnEnded.BindLambda([WeakThis = TWeakObjectPtr<AAlsCharacter>(this)](UAnimMontage* const /*Montage*/, const bool bInterrupted)
+	{
+		if (AAlsCharacter* const Self = WeakThis.Get())
+		{
+			Self->OnTurnInPlaceMontageFinished.Broadcast(bInterrupted);
+		}
+	});
+
+	return AlsAnim->PlayTurnInPlaceImmediate(ViewRelativeYaw, OnEnded, bFireEventIfNoTurnNeeded);
+}
 
 void AAlsCharacter::StartRolling(const float PlayRate)
 {
