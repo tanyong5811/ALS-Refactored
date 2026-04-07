@@ -28,6 +28,7 @@
 class UAlsLinkedAnimationInstance;
 class UAlsAnimationInstanceSettings;
 class AAlsCharacter;
+class UAlsAnimationInstanceSettings;
 
 UCLASS()
 class ALS_API UAlsAnimationInstance : public UAnimInstance
@@ -147,6 +148,11 @@ public:
 	virtual void NativeThreadSafeUpdateAnimation(float DeltaTime) override;
 
 	virtual void NativePostUpdateAnimation();
+
+	// Runtime switch for animation settings data asset.
+	// Intended to be called from character/gameplay code on the game thread.
+	UFUNCTION(BlueprintCallable, Category = "ALS|Animation Instance")
+	void SetSettings(UAlsAnimationInstanceSettings* NewSettings);
 
 protected:
 	virtual FAnimInstanceProxy* CreateAnimInstanceProxy() override;
