@@ -218,6 +218,29 @@ void UAlsAnimationInstance::NativePostUpdateAnimation()
 	bPendingUpdate = false;
 }
 
+void UAlsAnimationInstance::SetSettings(UAlsAnimationInstanceSettings* NewSettings)
+{
+	if (!IsValid(NewSettings) || Settings == NewSettings)
+	{
+		return;
+	}
+
+	if (!IsInGameThread())
+	{
+		return;
+	}
+
+	Settings = NewSettings;
+
+	// Force re-initialization paths that depend on Settings to avoid stale cached values.
+	MarkPendingUpdate();
+	InitializeHead();
+	InitializeLean();
+	InitializeGrounded();
+	InitializeStandingMovement();
+	InitializeTurnInPlace();
+}
+
 FAnimInstanceProxy* UAlsAnimationInstance::CreateAnimInstanceProxy()
 {
 	return new FAlsAnimationInstanceProxy{this};

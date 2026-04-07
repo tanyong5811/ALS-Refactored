@@ -19,6 +19,7 @@ class UAlsCharacterSettings;
 class UAlsMovementSettings;
 class UAlsAnimationInstance;
 class UAlsMantlingSettings;
+class UAlsAnimationInstanceSettings;
 
 UCLASS(AutoExpandCategories = ("Settings|Als Character", "Settings|Als Character|Desired State"))
 class ALS_API AAlsCharacter : public ACharacter
@@ -192,6 +193,10 @@ public:
 public:
 	// 获取角色配置（Settings）。
 	const UAlsCharacterSettings* GetSettings() const;
+
+	// Runtime switch for current mesh anim instance ALS settings asset.
+	UFUNCTION(BlueprintCallable, Category = "ALS|Character")
+	bool SetAnimationInstanceSettings(UAlsAnimationInstanceSettings* NewSettings);
 
 protected:
 	// 计算相机（蓝图可覆写/扩展）：当返回值表示已处理时，C++ 将不会继续走 Super。

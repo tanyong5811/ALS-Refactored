@@ -11,6 +11,7 @@
 #include "Net/UnrealNetwork.h"
 #include "Net/Core/PushModel/PushModel.h"
 #include "Settings/AlsCharacterSettings.h"
+#include "Settings/AlsAnimationInstanceSettings.h"
 #include "Utility/AlsConstants.h"
 #include "Utility/AlsMacros.h"
 #include "Utility/AlsRotation.h"
@@ -365,6 +366,27 @@ void AAlsCharacter::Restart()
 bool AAlsCharacter::OnCalculateCamera_Implementation(float DeltaTime, FMinimalViewInfo& ViewInfo)
 {
 	return false;
+}
+
+bool AAlsCharacter::SetAnimationInstanceSettings(UAlsAnimationInstanceSettings* NewSettings)
+{
+	if (!IsValid(NewSettings))
+	{
+		return false;
+	}
+
+	if (!AnimationInstance.IsValid())
+	{
+		AnimationInstance = Cast<UAlsAnimationInstance>(GetMesh()->GetAnimInstance());
+	}
+
+	if (!AnimationInstance.IsValid())
+	{
+		return false;
+	}
+
+	AnimationInstance->SetSettings(NewSettings);
+	return true;
 }
 
 void AAlsCharacter::RefreshMeshProperties() const
