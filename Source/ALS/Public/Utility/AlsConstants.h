@@ -88,6 +88,7 @@ protected:
 	// Debug
 
 	inline static const FName CurvesDebugDisplay{TEXTVIEW("ALS.Curves")};
+	inline static const FName CurvesAlsDebugDisplay{TEXTVIEW("ALS.Curves.Als")};
 	inline static const FName StateDebugDisplay{TEXTVIEW("ALS.State")};
 	inline static const FName ShapesDebugDisplay{TEXTVIEW("ALS.Shapes")};
 	inline static const FName TracesDebugDisplay{TEXTVIEW("ALS.Traces")};
@@ -284,6 +285,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "ALS|Constants|Debug", Meta = (ReturnDisplayName = "Display Name"))
 	static const FName& CurvesDebugDisplayName();
+
+	UFUNCTION(BlueprintPure, Category = "ALS|Constants|Debug", Meta = (ReturnDisplayName = "Display Name"))
+	static const FName& CurvesAlsDebugDisplayName();
 
 	UFUNCTION(BlueprintPure, Category = "ALS|Constants|Debug", Meta = (ReturnDisplayName = "Display Name"))
 	static const FName& StateDebugDisplayName();
@@ -591,6 +595,11 @@ inline const FName& UAlsConstants::FootstepSoundBlockCurveName()
 inline const FName& UAlsConstants::CurvesDebugDisplayName()
 {
 	return CurvesDebugDisplay;
+}
+
+inline const FName& UAlsConstants::CurvesAlsDebugDisplayName()
+{
+	return CurvesAlsDebugDisplay;
 }
 
 inline const FName& UAlsConstants::StateDebugDisplayName()

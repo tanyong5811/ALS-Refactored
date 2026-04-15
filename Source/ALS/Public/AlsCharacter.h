@@ -828,6 +828,7 @@ private:
 
 	// Debug 曲线绘制：把用于动画/旋转计算的曲线以可视化方式输出。
 	void DisplayDebugCurves(const UCanvas* Canvas, float Scale, float HorizontalLocation, float& VerticalLocation) const;
+	void DisplayDebugAlsCurves(const UCanvas* Canvas, float Scale, float HorizontalLocation, float& VerticalLocation) const;
 
 	// Debug 状态绘制：输出当前 Locomotion/View 等内部状态值。
 	void DisplayDebugState(const UCanvas* Canvas, float Scale, float HorizontalLocation, float& VerticalLocation) const;

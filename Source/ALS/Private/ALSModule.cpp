@@ -60,6 +60,11 @@ void FALSModule::Console_OnRegisterAutoCompleteEntries(TArray<FAutoCompleteComma
 	Command->Color = CommandColor;
 
 	Command = &AutoCompleteCommands.AddDefaulted_GetRef();
+	Command->Command = FString{TEXTVIEW("ShowDebug Als.Curves.Als")};
+	Command->Desc = FString{TEXTVIEW("Displays ALS tagged animation curves only.")};
+	Command->Color = CommandColor;
+
+	Command = &AutoCompleteCommands.AddDefaulted_GetRef();
 	Command->Command = FString{TEXTVIEW("ShowDebug Als.State")};
 	Command->Desc = FString{TEXTVIEW("Displays character state.")};
 	Command->Color = CommandColor;

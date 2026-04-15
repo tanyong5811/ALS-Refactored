@@ -11,6 +11,7 @@
 #include "Engine/SkeletalMesh.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Utility/AlsConstants.h"
+#include "Utility/AlsGameplayTags.h"
 #include "Utility/AlsMath.h"
 #include "Utility/AlsUtility.h"
 #include "Utility/AlsVector.h"
@@ -38,6 +39,7 @@ void AAlsCharacter::DisplayDebug(UCanvas* Canvas, const FDebugDisplayInfo& Displ
 	MaxVerticalLocation = FMath::Max(MaxVerticalLocation, VerticalLocation);
 
 	if (!DisplayInfo.IsDisplayOn(UAlsConstants::CurvesDebugDisplayName()) &&
+	    !DisplayInfo.IsDisplayOn(UAlsConstants::CurvesAlsDebugDisplayName()) &&
 	    !DisplayInfo.IsDisplayOn(UAlsConstants::StateDebugDisplayName()) &&
 	    !DisplayInfo.IsDisplayOn(UAlsConstants::ShapesDebugDisplayName()) &&
 	    !DisplayInfo.IsDisplayOn(UAlsConstants::TracesDebugDisplayName()) &&
@@ -50,10 +52,13 @@ void AAlsCharacter::DisplayDebug(UCanvas* Canvas, const FDebugDisplayInfo& Displ
 	}
 
 	const auto InitialVerticalLocation{VerticalLocation};
+	const auto bDisplayAlsCurves{DisplayInfo.IsDisplayOn(UAlsConstants::CurvesAlsDebugDisplayName())};
+	const auto bDisplayCurves{DisplayInfo.IsDisplayOn(UAlsConstants::CurvesDebugDisplayName()) && !bDisplayAlsCurves};
 
 	static const auto CurvesHeaderText{FText::AsCultureInvariant(FString{TEXTVIEW("Als.Curves (Shift + 1)")})};
+	static const auto AlsCurvesHeaderText{FText::AsCultureInvariant(FString{TEXTVIEW("Als.Curves.Als")})};
 
-	if (DisplayInfo.IsDisplayOn(UAlsConstants::CurvesDebugDisplayName()))
+	if (bDisplayCurves)
 	{
 		DisplayDebugHeader(Canvas, CurvesHeaderText, FLinearColor::Green, Scale, HorizontalLocation, VerticalLocation);
 		DisplayDebugCurves(Canvas, Scale, HorizontalLocation, VerticalLocation);
@@ -65,6 +70,24 @@ void AAlsCharacter::DisplayDebug(UCanvas* Canvas, const FDebugDisplayInfo& Displ
 	else
 	{
 		DisplayDebugHeader(Canvas, CurvesHeaderText, {0.0f, 0.333333f, 0.0f}, Scale, HorizontalLocation, VerticalLocation);
+
+		VerticalLocation += RowOffset;
+	}
+
+	MaxVerticalLocation = FMath::Max(MaxVerticalLocation, VerticalLocation);
+
+	if (bDisplayAlsCurves)
+	{
+		DisplayDebugHeader(Canvas, AlsCurvesHeaderText, FLinearColor::Green, Scale, HorizontalLocation, VerticalLocation);
+		DisplayDebugAlsCurves(Canvas, Scale, HorizontalLocation, VerticalLocation);
+
+		MaxVerticalLocation = FMath::Max(MaxVerticalLocation, VerticalLocation + RowOffset);
+		VerticalLocation = InitialVerticalLocation;
+		HorizontalLocation += ColumnOffset;
+	}
+	else
+	{
+		DisplayDebugHeader(Canvas, AlsCurvesHeaderText, {0.0f, 0.333333f, 0.0f}, Scale, HorizontalLocation, VerticalLocation);
 
 		VerticalLocation += RowOffset;
 	}
@@ -174,6 +197,67 @@ void AAlsCharacter::DisplayDebugCurves(const UCanvas* Canvas, const float Scale,
 
 	TArray<FName> CurveNames;
 	GetMesh()->GetSkeletalMeshAsset()->GetSkeleton()->GetCurveMetaDataNames(CurveNames);
+
+	CurveNames.Sort([](const FName& A, const FName& B)
+	{
+		return A.LexicalLess(B);
+	});
+
+	TStringBuilder<32> CurveValueBuilder;
+
+	for (const auto& CurveName : CurveNames)
+	{
+		const auto CurveValue{GetMesh()->GetAnimInstance()->GetCurveValue(CurveName)};
+
+		Text.SetColor(FMath::Lerp(FLinearColor::Gray, FLinearColor::White, UAlsMath::Clamp01(CurveValue)));
+
+		Text.Text = FText::AsCultureInvariant(FName::NameToDisplayString(CurveName.ToString(), false));
+		Text.Draw(Canvas->Canvas, {HorizontalLocation, VerticalLocation});
+
+		CurveValueBuilder.Appendf(TEXT("%.2f"), CurveValue);
+
+		Text.Text = FText::AsCultureInvariant(FString{CurveValueBuilder});
+		Text.Draw(Canvas->Canvas, {HorizontalLocation + ColumnOffset, VerticalLocation});
+
+		CurveValueBuilder.Reset();
+
+		VerticalLocation += RowOffset;
+	}
+}
+
+void AAlsCharacter::DisplayDebugAlsCurves(const UCanvas* Canvas, const float Scale,
+                                          const float HorizontalLocation, float& VerticalLocation) const
+{
+	VerticalLocation += 4.0f * Scale;
+
+	FCanvasTextItem Text{
+		FVector2D::ZeroVector,
+		FText::GetEmpty(),
+		UEngine::GetMediumFont(),
+		FLinearColor::White
+	};
+
+	Text.Scale = {Scale * 0.75f, Scale * 0.75f};
+	Text.EnableShadow(FLinearColor::Black);
+
+	const auto RowOffset{12.0f * Scale};
+	const auto ColumnOffset{145.0f * Scale};
+
+	TArray<FGameplayTag> CurveTags;
+	UAlsUtility::GetChildTags(AlsCurveTags::Curves).GetGameplayTagArray(CurveTags);
+
+	TArray<FName> CurveNames;
+	CurveNames.Reserve(CurveTags.Num());
+
+	for (const auto& CurveTag : CurveTags)
+	{
+		const auto CurveName{UAlsUtility::GetSimpleTagName(CurveTag)};
+
+		if (!CurveName.IsNone())
+		{
+			CurveNames.AddUnique(CurveName);
+		}
+	}
 
 	CurveNames.Sort([](const FName& A, const FName& B)
 	{
