@@ -150,6 +150,14 @@ public:
 	// 构造函数：使用 ALS 的自定义 movement component 子类。
 	explicit AAlsCharacter(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
+	// 是否启用 ALS 的运行时主处理（Tick 内的 Locomotion/View/Rotation/Mantling/Ragdolling/Rolling 刷新）。
+	// 关闭后会保留 ACharacter 的基础 Tick，但跳过 ALS 主流程，适合“非 ALS”或“旧 ALS 蓝图”兼容模式。
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS|Performance")
+	uint8 bAlsRuntimeProcessingEnabled : 1 {false};
+
+	UFUNCTION(BlueprintCallable, Category = "ALS|Performance")
+	void SetAlsRuntimeProcessingEnabled(bool bEnabled);
+
 #if WITH_EDITOR
 	// 编辑器属性变更回调：用于限制不允许被编辑的属性（保证旋转/控制设置一致性）。
 	virtual bool CanEditChange(const FProperty* Property) const override;

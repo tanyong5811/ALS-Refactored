@@ -71,9 +71,9 @@ bool AAlsCharacter::CanEditChange(const FProperty* Property) const
 {
 	// 用于限制编辑器对某些控制旋转相关属性的修改，避免破坏 ALS 的旋转逻辑假设。
 	return Super::CanEditChange(Property) &&
-	       Property->GetFName() != GET_MEMBER_NAME_STRING_VIEW_CHECKED(ThisClass, bUseControllerRotationPitch) &&
-	       Property->GetFName() != GET_MEMBER_NAME_STRING_VIEW_CHECKED(ThisClass, bUseControllerRotationYaw) &&
-	       Property->GetFName() != GET_MEMBER_NAME_STRING_VIEW_CHECKED(ThisClass, bUseControllerRotationRoll);
+		   Property->GetFName() != GET_MEMBER_NAME_STRING_VIEW_CHECKED(ThisClass, bUseControllerRotationPitch) &&
+		   Property->GetFName() != GET_MEMBER_NAME_STRING_VIEW_CHECKED(ThisClass, bUseControllerRotationYaw) &&
+		   Property->GetFName() != GET_MEMBER_NAME_STRING_VIEW_CHECKED(ThisClass, bUseControllerRotationRoll);
 }
 #endif
 
@@ -101,6 +101,12 @@ void AAlsCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLif
 
 void AAlsCharacter::PreRegisterAllComponents()
 {
+	if (!bAlsRuntimeProcessingEnabled)
+	{
+		Super::PreRegisterAllComponents();
+		return;
+	}
+
 	// Set some default values here so that the animation instance and the
 	// camera component can read the most up-to-date values during initialization.
 	// 在组件真正开始注册/初始化前，把期望的旋转/站姿/步态先写入，
@@ -116,6 +122,11 @@ void AAlsCharacter::PreRegisterAllComponents()
 void AAlsCharacter::PostRegisterAllComponents()
 {
 	Super::PostRegisterAllComponents();
+
+	if (!bAlsRuntimeProcessingEnabled)
+	{
+		return;
+	}
 
 	SetReplicatedViewRotation(Super::GetViewRotation().GetNormalized(), false);
 	// 用当前视角初始化复制用的 ViewRotation，保证后续 network smoothing 的基准一致。
@@ -138,6 +149,13 @@ void AAlsCharacter::PostRegisterAllComponents()
 
 void AAlsCharacter::PostInitializeComponents()
 {
+
+	if (!bAlsRuntimeProcessingEnabled)
+	{
+		Super::PostInitializeComponents();
+		return;
+	}
+
 	// Make sure the mesh and animation blueprint are ticking after the character so they can access the most up-to-date character state.
 	// tick 先后顺序直接决定动画实例能否读取到“本帧最新”的角色状态。
 
@@ -157,6 +175,12 @@ void AAlsCharacter::PostInitializeComponents()
 
 void AAlsCharacter::BeginPlay()
 {
+	if (!bAlsRuntimeProcessingEnabled)
+	{
+		Super::BeginPlay();
+		return;
+	}
+
 	ALS_ENSURE(IsValid(Settings));
 	ALS_ENSURE(IsValid(MovementSettings));
 	std::ignore = ALS_ENSURE(AnimationInstance.IsValid());
@@ -204,6 +228,12 @@ void AAlsCharacter::BeginPlay()
 
 void AAlsCharacter::CalcCamera(const float DeltaTime, FMinimalViewInfo& ViewInfo)
 {
+	if (!bAlsRuntimeProcessingEnabled)
+	{
+		Super::CalcCamera(DeltaTime, ViewInfo);
+		return;
+	}
+
 	// 优先让蓝图/ALS 逻辑处理相机（OnCalculateCamera 返回 true 时不再走 Super::CalcCamera）。
 	if (!OnCalculateCamera(DeltaTime, ViewInfo))
 	{
@@ -213,6 +243,12 @@ void AAlsCharacter::CalcCamera(const float DeltaTime, FMinimalViewInfo& ViewInfo
 
 void AAlsCharacter::PostNetReceiveLocationAndRotation()
 {
+	if (!bAlsRuntimeProcessingEnabled)
+	{
+		Super::PostNetReceiveLocationAndRotation();
+		return;
+	}
+
 	// 该回调只会发生在 simulated proxies，因此 Rotation/Teleport 校正逻辑直接作用于它们。
 
 	const auto PreviousLocation{GetActorLocation()};
@@ -244,6 +280,12 @@ void AAlsCharacter::PostNetReceiveLocationAndRotation()
 
 void AAlsCharacter::OnRep_ReplicatedBasedMovement()
 {
+	if (!bAlsRuntimeProcessingEnabled)
+	{
+		Super::OnRep_ReplicatedBasedMovement();
+		return;
+	}
+
 	// ACharacter::OnRep_ReplicatedBasedMovement() is only called on simulated proxies, so there is no need to check roles here.
 	// ReplicatedBasedMovement 的旋转可能在基底相对空间中，需要根据 MovementBase 重建实际旋转。
 
@@ -296,7 +338,7 @@ void AAlsCharacter::Tick(const float DeltaTime)
 	// 用于 UE 的统计系统，记录本函数 Tick 的 CPU 开销。
 	// 用于 Trace/Profiler，在捕获帧里定位 Tick 的采样区间。
 
-	if (!IsValid(Settings) || !AnimationInstance.IsValid())
+	if (!bAlsRuntimeProcessingEnabled || !IsValid(Settings) || !AnimationInstance.IsValid())
 	{
 		Super::Tick(DeltaTime);
 		return;
@@ -344,9 +386,19 @@ void AAlsCharacter::Tick(const float DeltaTime)
 	// Locomotion 后期收尾阶段，把主阶段的计算结果落到最终可用状态/参数。
 }
 
+void AAlsCharacter::SetAlsRuntimeProcessingEnabled(const bool bEnabled)
+{
+	bAlsRuntimeProcessingEnabled = bEnabled;
+}
+
 void AAlsCharacter::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
+
+	if (!bAlsRuntimeProcessingEnabled)
+	{
+		return;
+	}
 
 	RefreshMeshProperties();
 
@@ -359,6 +411,11 @@ void AAlsCharacter::PossessedBy(AController* NewController)
 void AAlsCharacter::Restart()
 {
 	Super::Restart();
+
+	if (!bAlsRuntimeProcessingEnabled)
+	{
+		return;
+	}
 
 	ApplyDesiredStance();
 }
@@ -657,11 +714,21 @@ void AAlsCharacter::RefreshMovementBase()
 
 void AAlsCharacter::SetViewMode(const FGameplayTag& NewViewMode)
 {
+	if (!bAlsRuntimeProcessingEnabled)
+	{
+		return;
+	}
+
 	SetViewMode(NewViewMode, true);
 }
 
 void AAlsCharacter::SetViewMode(const FGameplayTag& NewViewMode, const bool bSendRpc)
 {
+	if (!bAlsRuntimeProcessingEnabled)
+	{
+		return;
+	}
+
 	if (ViewMode == NewViewMode || GetLocalRole() < ROLE_AutonomousProxy)
 	{
 		return;
@@ -696,6 +763,12 @@ void AAlsCharacter::ServerSetViewMode_Implementation(const FGameplayTag& NewView
 
 void AAlsCharacter::OnMovementModeChanged(const EMovementMode PreviousMovementMode, const uint8 PreviousCustomMode)
 {
+	if (!bAlsRuntimeProcessingEnabled)
+	{
+		Super::OnMovementModeChanged(PreviousMovementMode, PreviousCustomMode);
+		return;
+	}
+
 	// Use the character movement mode to set the locomotion mode to the right value. This allows you to have a
 	// custom set of movement modes but still use the functionality of the default character movement component.
 
@@ -838,11 +911,21 @@ void AAlsCharacter::OnDesiredAimingChanged_Implementation(const bool bPreviousDe
 
 void AAlsCharacter::SetDesiredRotationMode(const FGameplayTag& NewDesiredRotationMode)
 {
+	if (!bAlsRuntimeProcessingEnabled)
+	{
+		return;
+	}
+
 	SetDesiredRotationMode(NewDesiredRotationMode, true);
 }
 
 void AAlsCharacter::SetDesiredRotationMode(const FGameplayTag& NewDesiredRotationMode, const bool bSendRpc)
 {
+	if (!bAlsRuntimeProcessingEnabled)
+	{
+		return;
+	}
+
 	if (DesiredRotationMode == NewDesiredRotationMode || GetLocalRole() < ROLE_AutonomousProxy)
 	{
 		return;
@@ -986,11 +1069,21 @@ void AAlsCharacter::RefreshRotationMode()
 
 void AAlsCharacter::SetDesiredStance(const FGameplayTag& NewDesiredStance)
 {
+	if (!bAlsRuntimeProcessingEnabled)
+	{
+		return;
+	}
+
 	SetDesiredStance(NewDesiredStance, true);
 }
 
 void AAlsCharacter::SetDesiredStance(const FGameplayTag& NewDesiredStance, const bool bSendRpc)
 {
+	if (!bAlsRuntimeProcessingEnabled)
+	{
+		return;
+	}
+
 	if (DesiredStance == NewDesiredStance || GetLocalRole() < ROLE_AutonomousProxy)
 	{
 		return;
@@ -1053,6 +1146,11 @@ void AAlsCharacter::ApplyDesiredStance()
 
 bool AAlsCharacter::CanCrouch() const
 {
+	if (!bAlsRuntimeProcessingEnabled)
+	{
+		return Super::CanCrouch();
+	}
+
 	// This allows the ACharacter::Crouch() function to execute properly when bIsCrouched is true.
 	// TODO Wait for https://github.com/EpicGames/UnrealEngine/pull/9558 to be merged into the engine.
 
@@ -1061,6 +1159,12 @@ bool AAlsCharacter::CanCrouch() const
 
 void AAlsCharacter::OnStartCrouch(const float HalfHeightAdjust, const float ScaledHalfHeightAdjust)
 {
+	if (!bAlsRuntimeProcessingEnabled)
+	{
+		Super::OnStartCrouch(HalfHeightAdjust, ScaledHalfHeightAdjust);
+		return;
+	}
+
 	auto* PredictionData{GetCharacterMovement()->GetPredictionData_Client_Character()};
 
 	if (PredictionData != nullptr && GetLocalRole() <= ROLE_SimulatedProxy &&
@@ -1082,6 +1186,12 @@ void AAlsCharacter::OnStartCrouch(const float HalfHeightAdjust, const float Scal
 
 void AAlsCharacter::OnEndCrouch(const float HalfHeightAdjust, const float ScaledHalfHeightAdjust)
 {
+	if (!bAlsRuntimeProcessingEnabled)
+	{
+		Super::OnEndCrouch(HalfHeightAdjust, ScaledHalfHeightAdjust);
+		return;
+	}
+
 	auto* PredictionData{GetCharacterMovement()->GetPredictionData_Client_Character()};
 
 	if (PredictionData != nullptr && GetLocalRole() <= ROLE_SimulatedProxy &&
@@ -1116,11 +1226,21 @@ void AAlsCharacter::OnStanceChanged_Implementation(const FGameplayTag& PreviousS
 
 void AAlsCharacter::SetDesiredGait(const FGameplayTag& NewDesiredGait)
 {
+	if (!bAlsRuntimeProcessingEnabled)
+	{
+		return;
+	}
+
 	SetDesiredGait(NewDesiredGait, true);
 }
 
 void AAlsCharacter::SetDesiredGait(const FGameplayTag& NewDesiredGait, const bool bSendRpc)
 {
+	if (!bAlsRuntimeProcessingEnabled)
+	{
+		return;
+	}
+
 	if (DesiredGait == NewDesiredGait || GetLocalRole() < ROLE_AutonomousProxy)
 	{
 		return;
@@ -1256,11 +1376,21 @@ bool AAlsCharacter::CanSprint() const
 
 void AAlsCharacter::SetOverlayMode(const FGameplayTag& NewOverlayMode)
 {
+	if (!bAlsRuntimeProcessingEnabled)
+	{
+		return;
+	}
+
 	SetOverlayMode(NewOverlayMode, true);
 }
 
 void AAlsCharacter::SetOverlayMode(const FGameplayTag& NewOverlayMode, const bool bSendRpc)
 {
+	if (!bAlsRuntimeProcessingEnabled)
+	{
+		return;
+	}
+
 	if (OverlayMode == NewOverlayMode || GetLocalRole() <= ROLE_SimulatedProxy)
 	{
 		return;
@@ -1330,6 +1460,11 @@ void AAlsCharacter::NotifyLocomotionActionChanged(const FGameplayTag& PreviousLo
 
 FRotator AAlsCharacter::GetViewRotation() const
 {
+	if (!bAlsRuntimeProcessingEnabled)
+	{
+		return Super::GetViewRotation();
+	}
+
 	return ViewState.Rotation;
 }
 
@@ -1684,6 +1819,12 @@ void AAlsCharacter::MulticastSetInitialVelocityYawAngle_Implementation(const flo
 
 void AAlsCharacter::Jump()
 {
+	if (!bAlsRuntimeProcessingEnabled)
+	{
+		Super::Jump();
+		return;
+	}
+
 	if (Stance == AlsStanceTags::Standing && !LocomotionAction.IsValid() &&
 	    LocomotionMode == AlsLocomotionModeTags::Grounded)
 	{
@@ -1693,6 +1834,12 @@ void AAlsCharacter::Jump()
 
 void AAlsCharacter::OnJumped_Implementation()
 {
+	if (!bAlsRuntimeProcessingEnabled)
+	{
+		Super::OnJumped_Implementation();
+		return;
+	}
+
 	Super::OnJumped_Implementation();
 
 	if (GetLocalRole() == ROLE_AutonomousProxy)
@@ -1724,11 +1871,22 @@ void AAlsCharacter::OnJumpedNetworked()
 
 void AAlsCharacter::FaceRotation(const FRotator Rotation, const float DeltaTime)
 {
+	if (!bAlsRuntimeProcessingEnabled)
+	{
+		Super::FaceRotation(Rotation, DeltaTime);
+		return;
+	}
+
 	// Left empty intentionally. We ignore rotation changes from external sources because ALS itself has full control over actor rotation.
 }
 
 void AAlsCharacter::CharacterMovement_OnPhysicsRotation(const float DeltaTime)
 {
+	if (!bAlsRuntimeProcessingEnabled)
+	{
+		return;
+	}
+
 	RefreshRollingPhysics(DeltaTime);
 }
 

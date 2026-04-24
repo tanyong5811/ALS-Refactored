@@ -13,6 +13,15 @@
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(AlsCharacterMovementComponent)
 
+namespace AlsMovementRuntimeGuard
+{
+	static bool IsEnabled(const UAlsCharacterMovementComponent* MovementComponent)
+	{
+		const auto* AlsCharacter = Cast<AAlsCharacter>(MovementComponent != nullptr ? MovementComponent->GetOwner() : nullptr);
+		return !IsValid(AlsCharacter) || AlsCharacter->bAlsRuntimeProcessingEnabled;
+	}
+}
+
 void FAlsCharacterNetworkMoveData::ClientFillNetworkMoveData(const FSavedMove_Character& Move, const ENetworkMoveType MoveType)
 {
 	Super::ClientFillNetworkMoveData(Move, MoveType);
@@ -123,62 +132,62 @@ FSavedMovePtr FAlsNetworkPredictionData::AllocateNewMove()
 
 UAlsCharacterMovementComponent::UAlsCharacterMovementComponent()
 {
-	SetNetworkMoveDataContainer(MoveDataContainer);
+	//SetNetworkMoveDataContainer(MoveDataContainer);
 
-	bRunPhysicsWithNoController = true;
-	bAllowPhysicsRotationDuringAnimRootMotion = true;       // Required to be able to manually rotate the actor while rolling.
-	bNetworkAlwaysReplicateTransformUpdateTimestamp = true; // Required for view network smoothing.
+	//bRunPhysicsWithNoController = true;
+	//bAllowPhysicsRotationDuringAnimRootMotion = true;       // Required to be able to manually rotate the actor while rolling.
+	//bNetworkAlwaysReplicateTransformUpdateTimestamp = true; // Required for view network smoothing.
 
-	SetCrouchedHalfHeight(56.0f);
+	//SetCrouchedHalfHeight(56.0f);
 
-	// Default values for standing walking movement.
+	//// Default values for standing walking movement.
 
-	MinAnalogWalkSpeed = 25.0f;
-	MaxWalkSpeed = 375.0f;
-	MaxWalkSpeedCrouched = 150.0f;
-	MaxAccelerationWalking = 2000.0f;
-	BrakingDecelerationWalking = 1500.0f;
-	GroundFriction = 4.0f;
+	//MinAnalogWalkSpeed = 25.0f;
+	//MaxWalkSpeed = 375.0f;
+	//MaxWalkSpeedCrouched = 150.0f;
+	//MaxAccelerationWalking = 2000.0f;
+	//BrakingDecelerationWalking = 1500.0f;
+	//GroundFriction = 4.0f;
 
-	AirControl = 0.15f;
+	//AirControl = 0.15f;
 
-	// This value is only used when the actor is in the air, since when moving on the ground
-	// the value from the AccelerationAndDecelerationAndGroundFriction curve is used instead.
-	MaxAcceleration = 2000.0f;
+	//// This value is only used when the actor is in the air, since when moving on the ground
+	//// the value from the AccelerationAndDecelerationAndGroundFriction curve is used instead.
+	//MaxAcceleration = 2000.0f;
 
-	// Makes GroundFriction and FallingLateralFriction used for both acceleration and deceleration.
-	bUseSeparateBrakingFriction = false;
+	//// Makes GroundFriction and FallingLateralFriction used for both acceleration and deceleration.
+	//bUseSeparateBrakingFriction = false;
 
-	// Makes friction does not affect deceleration by default. Greater than zero only for a short period of time after landing.
-	BrakingFrictionFactor = 0.0f;
+	//// Makes friction does not affect deceleration by default. Greater than zero only for a short period of time after landing.
+	//BrakingFrictionFactor = 0.0f;
 
-	bCanWalkOffLedgesWhenCrouching = true;
+	//bCanWalkOffLedgesWhenCrouching = true;
 
-	// Subtracted from the capsule radius to check how far the actor is allowed to
-	// perch on the edge of a surface. Currently this is half the capsule radius.
-	PerchRadiusThreshold = 15.0f;
+	//// Subtracted from the capsule radius to check how far the actor is allowed to
+	//// perch on the edge of a surface. Currently this is half the capsule radius.
+	//PerchRadiusThreshold = 15.0f;
 
-	// This value allows the actor to perch a ledge whose height is close to MaxStepHeight.
-	PerchAdditionalHeight = 0.0f;
+	//// This value allows the actor to perch a ledge whose height is close to MaxStepHeight.
+	//PerchAdditionalHeight = 0.0f;
 
-	JumpOffJumpZFactor = 0.0f; // Makes the actor slide down instead of bouncing on a surface it can't stand on.
+	//JumpOffJumpZFactor = 0.0f; // Makes the actor slide down instead of bouncing on a surface it can't stand on.
 
-	// bImpartBaseVelocityX = false;
-	// bImpartBaseVelocityY = false;
-	// bImpartBaseVelocityZ = false;
-	// bImpartBaseAngularVelocity = false;
-	bIgnoreBaseRotation = true;
+	//// bImpartBaseVelocityX = false;
+	//// bImpartBaseVelocityY = false;
+	//// bImpartBaseVelocityZ = false;
+	//// bImpartBaseAngularVelocity = false;
+	//bIgnoreBaseRotation = true;
 
-	// bStayBasedInAir = true;
+	//// bStayBasedInAir = true;
 
-	// These values prohibit the character movement component from affecting the actor's rotation.
+	//// These values prohibit the character movement component from affecting the actor's rotation.
 
-	RotationRate = FRotator::ZeroRotator;
-	bUseControllerDesiredRotation = false;
-	bOrientRotationToMovement = false;
+	//RotationRate = FRotator::ZeroRotator;
+	//bUseControllerDesiredRotation = false;
+	//bOrientRotationToMovement = false;
 
-	NavAgentProps.bCanCrouch = true;
-	NavMovementProperties.bUseAccelerationForPaths = true;
+	//NavAgentProps.bCanCrouch = true;
+	//NavMovementProperties.bUseAccelerationForPaths = true;
 }
 
 #if WITH_EDITOR
@@ -193,6 +202,41 @@ bool UAlsCharacterMovementComponent::CanEditChange(const FProperty* Property) co
 
 void UAlsCharacterMovementComponent::BeginPlay()
 {
+	if (!AlsMovementRuntimeGuard::IsEnabled(this))
+	{
+		Super::BeginPlay();
+		return;
+	}
+
+	// Apply ALS-specific movement defaults only when ALS runtime is enabled,
+	// so Legacy/NonALS modes keep their own archetype/default settings.
+	SetNetworkMoveDataContainer(MoveDataContainer);
+	bRunPhysicsWithNoController = true;
+	bAllowPhysicsRotationDuringAnimRootMotion = true;
+	bNetworkAlwaysReplicateTransformUpdateTimestamp = true;
+	SetCrouchedHalfHeight(56.0f);
+
+	MinAnalogWalkSpeed = 25.0f;
+	MaxWalkSpeed = 375.0f;
+	MaxWalkSpeedCrouched = 150.0f;
+	MaxAccelerationWalking = 2000.0f;
+	BrakingDecelerationWalking = 1500.0f;
+	GroundFriction = 4.0f;
+	AirControl = 0.15f;
+	MaxAcceleration = 2000.0f;
+	bUseSeparateBrakingFriction = false;
+	BrakingFrictionFactor = 0.0f;
+	bCanWalkOffLedgesWhenCrouching = true;
+	PerchRadiusThreshold = 15.0f;
+	PerchAdditionalHeight = 0.0f;
+	JumpOffJumpZFactor = 0.0f;
+	bIgnoreBaseRotation = true;
+	RotationRate = FRotator::ZeroRotator;
+	bUseControllerDesiredRotation = false;
+	bOrientRotationToMovement = false;
+	NavAgentProps.bCanCrouch = true;
+	NavMovementProperties.bUseAccelerationForPaths = true;
+
 	ALS_ENSURE_MESSAGE(!bUseControllerDesiredRotation && !bOrientRotationToMovement, // NOLINT(clang-diagnostic-unused-value)
 	                   TEXT("These settings are not allowed and must be turned off!"));
 
@@ -201,6 +245,11 @@ void UAlsCharacterMovementComponent::BeginPlay()
 
 FVector UAlsCharacterMovementComponent::ConsumeInputVector()
 {
+	if (!AlsMovementRuntimeGuard::IsEnabled(this))
+	{
+		return Super::ConsumeInputVector();
+	}
+
 	auto InputVector{Super::ConsumeInputVector()};
 
 	if (bInputBlocked)
@@ -220,6 +269,12 @@ FVector UAlsCharacterMovementComponent::ConsumeInputVector()
 
 void UAlsCharacterMovementComponent::SetMovementMode(const EMovementMode NewMovementMode, const uint8 NewCustomMode)
 {
+	if (!AlsMovementRuntimeGuard::IsEnabled(this))
+	{
+		Super::SetMovementMode(NewMovementMode, NewCustomMode);
+		return;
+	}
+
 	if (!bMovementModeLocked)
 	{
 		Super::SetMovementMode(NewMovementMode, NewCustomMode);
@@ -228,6 +283,12 @@ void UAlsCharacterMovementComponent::SetMovementMode(const EMovementMode NewMove
 
 void UAlsCharacterMovementComponent::OnMovementModeChanged(const EMovementMode PreviousMovementMode, const uint8 PreviousCustomMode)
 {
+	if (!AlsMovementRuntimeGuard::IsEnabled(this))
+	{
+		Super::OnMovementModeChanged(PreviousMovementMode, PreviousCustomMode);
+		return;
+	}
+
 	Super::OnMovementModeChanged(PreviousMovementMode, PreviousCustomMode);
 
 	// This removes some very noticeable changes in the mesh location when the
@@ -238,11 +299,22 @@ void UAlsCharacterMovementComponent::OnMovementModeChanged(const EMovementMode P
 
 bool UAlsCharacterMovementComponent::ShouldPerformAirControlForPathFollowing() const
 {
+	if (!AlsMovementRuntimeGuard::IsEnabled(this))
+	{
+		return Super::ShouldPerformAirControlForPathFollowing();
+	}
+
 	return !bInputBlocked && Super::ShouldPerformAirControlForPathFollowing();
 }
 
 void UAlsCharacterMovementComponent::UpdateBasedRotation(FRotator& FinalRotation, const FRotator& ReducedRotation)
 {
+	if (!AlsMovementRuntimeGuard::IsEnabled(this))
+	{
+		Super::UpdateBasedRotation(FinalRotation, ReducedRotation);
+		return;
+	}
+
 	// Ignore the parent implementation of this function and provide our own, because the parent
 	// implementation has no effect when we ignore rotation changes in AAlsCharacter::FaceRotation().
 
@@ -271,6 +343,12 @@ bool UAlsCharacterMovementComponent::ApplyRequestedMove(const float DeltaTime, c
                                                         const float MaxSpeed, const float Friction, const float BrakingDeceleration,
                                                         FVector& RequestedAcceleration, float& RequestedSpeed)
 {
+	if (!AlsMovementRuntimeGuard::IsEnabled(this))
+	{
+		return Super::ApplyRequestedMove(DeltaTime, CurrentMaxAcceleration, MaxSpeed, Friction,
+		                                 BrakingDeceleration, RequestedAcceleration, RequestedSpeed);
+	}
+
 	return !bInputBlocked && Super::ApplyRequestedMove(DeltaTime, CurrentMaxAcceleration, MaxSpeed, Friction,
 	                                                   BrakingDeceleration, RequestedAcceleration, RequestedSpeed);
 }
@@ -278,6 +356,12 @@ bool UAlsCharacterMovementComponent::ApplyRequestedMove(const float DeltaTime, c
 void UAlsCharacterMovementComponent::CalcVelocity(const float DeltaTime, const float Friction,
                                                   const bool bFluid, const float BrakingDeceleration)
 {
+	if (!AlsMovementRuntimeGuard::IsEnabled(this))
+	{
+		Super::CalcVelocity(DeltaTime, Friction, bFluid, BrakingDeceleration);
+		return;
+	}
+
 	FRotator BaseRotationSpeed;
 	if (!bIgnoreBaseRotation && UAlsUtility::TryGetMovementBaseRotationSpeed(CharacterOwner->GetBasedMovement(), BaseRotationSpeed))
 	{
@@ -290,6 +374,11 @@ void UAlsCharacterMovementComponent::CalcVelocity(const float DeltaTime, const f
 
 float UAlsCharacterMovementComponent::GetMaxAcceleration() const
 {
+	if (!AlsMovementRuntimeGuard::IsEnabled(this))
+	{
+		return Super::GetMaxAcceleration();
+	}
+
 	if (IsMovingOnGround())
 	{
 		return MaxAccelerationWalking;
@@ -300,6 +389,12 @@ float UAlsCharacterMovementComponent::GetMaxAcceleration() const
 
 void UAlsCharacterMovementComponent::ControlledCharacterMove(const FVector& InputVector, const float DeltaTime)
 {
+	if (!AlsMovementRuntimeGuard::IsEnabled(this))
+	{
+		Super::ControlledCharacterMove(InputVector, DeltaTime);
+		return;
+	}
+
 	Super::ControlledCharacterMove(InputVector, DeltaTime);
 
 	const auto* Controller{CharacterOwner->GetController()};
@@ -311,6 +406,12 @@ void UAlsCharacterMovementComponent::ControlledCharacterMove(const FVector& Inpu
 
 void UAlsCharacterMovementComponent::PhysicsRotation(const float DeltaTime)
 {
+	if (!AlsMovementRuntimeGuard::IsEnabled(this))
+	{
+		Super::PhysicsRotation(DeltaTime);
+		return;
+	}
+
 	Super::PhysicsRotation(DeltaTime);
 
 	if (HasValidData() && (bRunPhysicsWithNoController || IsValid(CharacterOwner->GetController())))
@@ -321,6 +422,12 @@ void UAlsCharacterMovementComponent::PhysicsRotation(const float DeltaTime)
 
 void UAlsCharacterMovementComponent::MoveSmooth(const FVector& InVelocity, const float DeltaTime, FStepDownResult* StepDownResult)
 {
+	if (!AlsMovementRuntimeGuard::IsEnabled(this))
+	{
+		Super::MoveSmooth(InVelocity, DeltaTime, StepDownResult);
+		return;
+	}
+
 	if (IsMovingOnGround())
 	{
 		RefreshGroundedMovementSettings();
@@ -331,6 +438,12 @@ void UAlsCharacterMovementComponent::MoveSmooth(const FVector& InVelocity, const
 
 void UAlsCharacterMovementComponent::PhysWalking(const float DeltaTime, int32 IterationsCount)
 {
+	if (!AlsMovementRuntimeGuard::IsEnabled(this))
+	{
+		Super::PhysWalking(DeltaTime, IterationsCount);
+		return;
+	}
+
 	RefreshGroundedMovementSettings();
 
 	auto Iterations{IterationsCount};
@@ -589,6 +702,12 @@ void UAlsCharacterMovementComponent::PhysWalking(const float DeltaTime, int32 It
 
 void UAlsCharacterMovementComponent::PhysNavWalking(const float DeltaTime, const int32 IterationsCount)
 {
+	if (!AlsMovementRuntimeGuard::IsEnabled(this))
+	{
+		Super::PhysNavWalking(DeltaTime, IterationsCount);
+		return;
+	}
+
 	RefreshGroundedMovementSettings();
 
 	Super::PhysNavWalking(DeltaTime, IterationsCount);
@@ -596,6 +715,12 @@ void UAlsCharacterMovementComponent::PhysNavWalking(const float DeltaTime, const
 
 void UAlsCharacterMovementComponent::PhysCustom(const float DeltaTime, int32 IterationsCount)
 {
+	if (!AlsMovementRuntimeGuard::IsEnabled(this))
+	{
+		Super::PhysCustom(DeltaTime, IterationsCount);
+		return;
+	}
+
 	if (DeltaTime < MIN_TICK_TIME)
 	{
 		Super::PhysCustom(DeltaTime, IterationsCount);
@@ -623,6 +748,12 @@ void UAlsCharacterMovementComponent::ComputeFloorDist(const FVector& CapsuleLoca
                                                       float SweepDistance, FFindFloorResult& OutFloorResult,
                                                       float SweepRadius, const FHitResult* DownwardSweepResult) const
 {
+	if (!AlsMovementRuntimeGuard::IsEnabled(this))
+	{
+		Super::ComputeFloorDist(CapsuleLocation, LineDistance, SweepDistance, OutFloorResult, SweepRadius, DownwardSweepResult);
+		return;
+	}
+
 	// TODO Copied with modifications from UCharacterMovementComponent::ComputeFloorDist().
 	// TODO After the release of a new engine version, this code should be updated to match the source code.
 
@@ -795,6 +926,12 @@ void UAlsCharacterMovementComponent::ComputeFloorDist(const FVector& CapsuleLoca
 
 void UAlsCharacterMovementComponent::PerformMovement(const float DeltaTime)
 {
+	if (!AlsMovementRuntimeGuard::IsEnabled(this))
+	{
+		Super::PerformMovement(DeltaTime);
+		return;
+	}
+
 	Super::PerformMovement(DeltaTime);
 
 	// Update the ServerLastTransformUpdateTimeStamp when the control rotation
@@ -818,6 +955,11 @@ void UAlsCharacterMovementComponent::PerformMovement(const float DeltaTime)
 
 FNetworkPredictionData_Client* UAlsCharacterMovementComponent::GetPredictionData_Client() const
 {
+	if (!AlsMovementRuntimeGuard::IsEnabled(this))
+	{
+		return Super::GetPredictionData_Client();
+	}
+
 	if (ClientPredictionData == nullptr)
 	{
 		auto* MutableThis{const_cast<ThisClass*>(this)};
@@ -830,6 +972,12 @@ FNetworkPredictionData_Client* UAlsCharacterMovementComponent::GetPredictionData
 
 void UAlsCharacterMovementComponent::SmoothClientPosition(const float DeltaTime)
 {
+	if (!AlsMovementRuntimeGuard::IsEnabled(this))
+	{
+		Super::SmoothClientPosition(DeltaTime);
+		return;
+	}
+
 	auto* PredictionData{GetPredictionData_Client_Character()};
 	const auto* Mesh{HasValidData() ? CharacterOwner->GetMesh() : nullptr};
 
@@ -852,6 +1000,12 @@ void UAlsCharacterMovementComponent::SmoothClientPosition(const float DeltaTime)
 void UAlsCharacterMovementComponent::MoveAutonomous(const float ClientTimeStamp, const float DeltaTime,
                                                     const uint8 CompressedFlags, const FVector& NewAcceleration)
 {
+	if (!AlsMovementRuntimeGuard::IsEnabled(this))
+	{
+		Super::MoveAutonomous(ClientTimeStamp, DeltaTime, CompressedFlags, NewAcceleration);
+		return;
+	}
+
 	const auto* MoveData{static_cast<FAlsCharacterNetworkMoveData*>(GetCurrentNetworkMoveData())}; // NOLINT(cppcoreguidelines-pro-type-static-cast-downcast)
 	if (MoveData != nullptr)
 	{
@@ -884,6 +1038,11 @@ void UAlsCharacterMovementComponent::MoveAutonomous(const float ClientTimeStamp,
 
 void UAlsCharacterMovementComponent::SetMovementSettings(UAlsMovementSettings* NewMovementSettings)
 {
+	if (!AlsMovementRuntimeGuard::IsEnabled(this))
+	{
+		return;
+	}
+
 	ALS_ENSURE(IsValid(NewMovementSettings));
 
 	MovementSettings = NewMovementSettings;
@@ -893,6 +1052,11 @@ void UAlsCharacterMovementComponent::SetMovementSettings(UAlsMovementSettings* N
 
 void UAlsCharacterMovementComponent::RefreshGaitSettings()
 {
+	if (!AlsMovementRuntimeGuard::IsEnabled(this))
+	{
+		return;
+	}
+
 	if (!ALS_ENSURE(IsValid(MovementSettings)))
 	{
 		return;
@@ -906,6 +1070,11 @@ void UAlsCharacterMovementComponent::RefreshGaitSettings()
 
 void UAlsCharacterMovementComponent::SetRotationMode(const FGameplayTag& NewRotationMode)
 {
+	if (!AlsMovementRuntimeGuard::IsEnabled(this))
+	{
+		return;
+	}
+
 	if (RotationMode != NewRotationMode)
 	{
 		RotationMode = NewRotationMode;
@@ -916,6 +1085,11 @@ void UAlsCharacterMovementComponent::SetRotationMode(const FGameplayTag& NewRota
 
 void UAlsCharacterMovementComponent::SetStance(const FGameplayTag& NewStance)
 {
+	if (!AlsMovementRuntimeGuard::IsEnabled(this))
+	{
+		return;
+	}
+
 	if (Stance != NewStance)
 	{
 		Stance = NewStance;
@@ -926,6 +1100,11 @@ void UAlsCharacterMovementComponent::SetStance(const FGameplayTag& NewStance)
 
 void UAlsCharacterMovementComponent::RefreshGroundedMovementSettings()
 {
+	if (!AlsMovementRuntimeGuard::IsEnabled(this))
+	{
+		return;
+	}
+
 	auto WalkSpeed{GaitSettings.WalkForwardSpeed};
 	auto RunSpeed{GaitSettings.RunForwardSpeed};
 
@@ -1012,16 +1191,31 @@ void UAlsCharacterMovementComponent::RefreshGroundedMovementSettings()
 
 void UAlsCharacterMovementComponent::SetMovementModeLocked(const bool bNewMovementModeLocked)
 {
+	if (!AlsMovementRuntimeGuard::IsEnabled(this))
+	{
+		return;
+	}
+
 	bMovementModeLocked = bNewMovementModeLocked;
 }
 
 void UAlsCharacterMovementComponent::SetInputBlocked(const bool bNewInputBlocked)
 {
+	if (!AlsMovementRuntimeGuard::IsEnabled(this))
+	{
+		return;
+	}
+
 	bInputBlocked = bNewInputBlocked;
 }
 
 bool UAlsCharacterMovementComponent::TryConsumePrePenetrationAdjustmentVelocity(FVector& OutVelocity)
 {
+	if (!AlsMovementRuntimeGuard::IsEnabled(this))
+	{
+		return false;
+	}
+
 	if (!bPrePenetrationAdjustmentVelocityValid)
 	{
 		OutVelocity = FVector::ZeroVector;
