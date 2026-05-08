@@ -146,7 +146,11 @@ void UAlsAnimationInstance::NativeUpdateAnimation(const float DeltaTime)
 	RefreshViewOnGameThread();
 	RefreshLocomotionOnGameThread();
 	RefreshInAirOnGameThread();
-	RefreshFeetOnGameThread();
+	if (!Settings->General.bUseCustomControlRig)
+	{
+		// 自定义 ControlRig 模式下不消费 FeetState，跳过 3 次 GetSocketTransform。
+		RefreshFeetOnGameThread();
+	}
 	RefreshRagdollingOnGameThread();
 
 	if (!bPendingUpdate && IsValid(Character->GetSettings()) &&
@@ -176,8 +180,12 @@ void UAlsAnimationInstance::NativeThreadSafeUpdateAnimation(const float DeltaTim
 
 	RefreshLayering();
 	RefreshPose();
-	RefreshView(DeltaTime);
-	RefreshFeet(DeltaTime);
+	RefreshView(DeltaTime); // 内部更新 SpineState.YawAngle，与 Feet 路径独立。
+	if (!Settings->General.bUseCustomControlRig)
+	{
+		// 自定义 ControlRig 模式下不消费 FeetState，跳过 RefreshFootLock×2 与 curve 取值。
+		RefreshFeet(DeltaTime);
+	}
 	RefreshTransitions();
 }
 

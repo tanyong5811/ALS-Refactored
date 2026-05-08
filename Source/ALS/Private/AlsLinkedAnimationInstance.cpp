@@ -4,6 +4,7 @@
 #include "AlsAnimationInstanceProxy.h"
 #include "AlsCharacter.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Settings/AlsAnimationInstanceSettings.h"
 #include "Utility/AlsMacros.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(AlsLinkedAnimationInstance)
@@ -53,6 +54,28 @@ void UAlsLinkedAnimationInstance::NativeBeginPlay()
 FAnimInstanceProxy* UAlsLinkedAnimationInstance::CreateAnimInstanceProxy()
 {
 	return new FAlsAnimationInstanceProxy{this};
+}
+
+bool UAlsLinkedAnimationInstance::IsUsingCustomControlRig() const
+{
+	const auto* ParentInstance{Parent.Get()};
+	if (!IsValid(ParentInstance))
+	{
+		return false;
+	}
+
+	const auto* InstanceSettings{ParentInstance->GetSettingsUnsafe()};
+	return IsValid(InstanceSettings) && InstanceSettings->General.bUseCustomControlRig;
+}
+
+FAlsControlRigInput UAlsLinkedAnimationInstance::GetControlRigInput() const
+{
+	const auto* ParentInstance{Parent.Get()};
+	if (!IsValid(ParentInstance))
+	{
+		return FAlsControlRigInput{};
+	}
+	return ParentInstance->GetControlRigInput();
 }
 
 void UAlsLinkedAnimationInstance::InitializeHead()

@@ -8,6 +8,9 @@ struct ALS_API FAlsGeneralAnimationSettings
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS")
+	uint8 bUseCustomControlRig : 1 {false};
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS")
 	uint8 bUseHandIkBones : 1 {true};
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS")

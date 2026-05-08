@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Animation/AnimInstance.h"
+#include "State/AlsControlRigInput.h"
 #include "AlsLinkedAnimationInstance.generated.h"
 
 class AAlsCharacter;
@@ -35,6 +36,20 @@ protected:
 	UFUNCTION(BlueprintPure, Category = "ALS|Linked Animation Instance",
 		Meta = (BlueprintThreadSafe, ReturnDisplayName = "Parent"))
 	UAlsAnimationInstance* GetParent() const;
+
+	// 透传父级 UAlsAnimationInstance->Settings->General.bUseCustomControlRig。
+	// 让 AnimGraph / PropertyAccess 在 LinkedAnimInstance 子类里也能读到该开关，
+	// 用于 Blend Poses by bool 切换 ALS 默认 ControlRig 与自定义 ControlRig 路径。
+	UFUNCTION(BlueprintPure, Category = "ALS|Linked Animation Instance",
+		Meta = (BlueprintThreadSafe, ReturnDisplayName = "Use Custom Control Rig"))
+	bool IsUsingCustomControlRig() const;
+
+	// 透传父级 UAlsAnimationInstance::GetControlRigInput()。
+	// 让 AnimGraph / PropertyAccess 在 LinkedAnimInstance 子类里也能拿到完整 RigInput
+	// （含 SpineYawAngle / Foot IK / PelvisOffsetAmount / VelocityBlend 等所有字段）。
+	UFUNCTION(BlueprintPure, Category = "ALS|Linked Animation Instance",
+		Meta = (BlueprintThreadSafe, ReturnDisplayName = "Rig Input"))
+	FAlsControlRigInput GetControlRigInput() const;
 
 	UFUNCTION(BlueprintCallable, Category = "ALS|Linked Animation Instance", Meta = (BlueprintThreadSafe))
 	void InitializeHead();
