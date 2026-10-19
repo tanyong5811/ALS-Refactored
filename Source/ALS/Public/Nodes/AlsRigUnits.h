@@ -6,15 +6,18 @@
 #include "Units/RigUnit.h"
 #include "AlsRigUnits.generated.h"
 
+// Clamps a floating-point value to the range [0, 1].
 USTRUCT(DisplayName = "Clamp 01", Meta = (Category = "ALS"))
 struct ALS_API FAlsRigVMFunction_Clamp01Float : public FRigVMFunction_MathFloatBase
 {
 	GENERATED_BODY()
 
 public:
+	// Value to clamp.
 	UPROPERTY(Meta = (Input))
 	float Value{0.0f};
 
+	// Clamped value.
 	UPROPERTY(Meta = (Output))
 	float Result{0.0f};
 
@@ -23,12 +26,14 @@ public:
 	virtual void Execute() override;
 };
 
+// Smoothly approaches the target using exponential damping.
 USTRUCT(DisplayName = "Damper Exact (Vector)", Meta = (Category = "ALS"))
 struct ALS_API FAlsRigVMFunction_DamperExactVector : public FRigVMFunction_SimBase
 {
 	GENERATED_BODY()
 
 public:
+	// Target vector to approach.
 	UPROPERTY(Meta = (Input))
 	FVector Target{ForceInit};
 
@@ -36,6 +41,7 @@ public:
 	UPROPERTY(Meta = (Input, ClampMin = 0, ForceUnits = "s"))
 	float HalfLife{1.0f};
 
+	// Current smoothed vector.
 	UPROPERTY(Transient, Meta = (Output))
 	FVector Current{ForceInit};
 
@@ -50,12 +56,14 @@ public:
 	virtual void Execute() override;
 };
 
+// Smoothly approaches the target using exponential damping.
 USTRUCT(DisplayName = "Damper Exact (Quaternion)", Meta = (Category = "ALS"))
 struct ALS_API FAlsRigVMFunction_DamperExactQuaternion : public FRigVMFunction_SimBase
 {
 	GENERATED_BODY()
 
 public:
+	// Target rotation to approach.
 	UPROPERTY(Meta = (Input))
 	FQuat Target{ForceInit};
 
@@ -63,6 +71,7 @@ public:
 	UPROPERTY(Meta = (Input, ClampMin = 0, ForceUnits = "s"))
 	float HalfLife{1.0f};
 
+	// Current smoothed rotation.
 	UPROPERTY(Transient, Meta = (Output))
 	FQuat Current{ForceInit};
 
@@ -123,6 +132,7 @@ public:
 	virtual void Execute() override;
 };
 
+// Selects an execution branch based on whether the context belongs to a game world.
 USTRUCT(DisplayName = "Is Game World", Meta = (Category = "ALS"))
 struct ALS_API FAlsRigVMFunction_IsGameWorld : public FRigVMFunction_ControlFlowBase
 {
@@ -132,12 +142,15 @@ public:
 	UPROPERTY(Transient, DisplayName = "Execute", Meta = (Input))
 	FRigVMExecuteContext ExecuteContext;
 
+	// Executes in a game world.
 	UPROPERTY(Transient, Meta = (Output))
 	FRigVMExecuteContext True;
 
+	// Executes outside a game world.
 	UPROPERTY(Transient, Meta = (Output))
 	FRigVMExecuteContext False;
 
+	// Executes after the selected branch completes.
 	UPROPERTY(meta=(Output))
 	FRigVMExecuteContext Completed;
 
