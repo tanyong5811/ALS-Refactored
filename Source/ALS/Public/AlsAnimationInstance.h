@@ -154,6 +154,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ALS|Animation Instance")
 	void SetSettings(UAlsAnimationInstanceSettings* NewSettings);
 
+	/** Current runtime settings asset; safe for game-thread equipment/profile switching. */
+	UFUNCTION(BlueprintPure, Category = "ALS|Animation Instance")
+	UAlsAnimationInstanceSettings* GetSettings() const { return Settings; }
+
 protected:
 	virtual FAnimInstanceProxy* CreateAnimInstanceProxy() override;
 

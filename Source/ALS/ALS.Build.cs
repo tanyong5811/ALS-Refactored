@@ -11,7 +11,8 @@ public class ALS : ModuleRules
 		CppCompileWarningSettings.NonInlinedGenCppWarningLevel = WarningLevel.Warning;
 
 		PublicDependencyModuleNames.AddRange([
-			"Core", "CoreUObject", "Engine", "GameplayTags", "AnimGraphRuntime", "RigVM", "ControlRig"
+			"Core", "CoreUObject", "Engine", "GameplayTags", "AnimGraphRuntime", "RigVM", "ControlRig",
+			"MC_GameplayCore" // AAlsCharacter publicly derives from AMC_Character.
 		]);
 
 		PrivateDependencyModuleNames.AddRange([

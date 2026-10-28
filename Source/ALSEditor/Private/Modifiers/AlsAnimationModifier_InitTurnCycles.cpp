@@ -32,7 +32,10 @@ void UAlsAnimationModifier_InitTurnCycles::OnApply_Implementation(UAnimSequence*
 				DataModel->GetBoneTrackTransform(RootBoneName, i + (Sequence->RateScale >= 0.0f ? 0 : -1))
 			};
 
-			const auto DeltaYaw{NextPoseTransform.Rotator().Yaw - CurrentPoseTransform.Rotator().Yaw};
+			// Rotator yaw wraps at +/-180 degrees. Use the shortest signed delta
+			// so a continuous half-turn cannot produce a full-revolution speed spike.
+			const auto DeltaYaw{FMath::FindDeltaAngleDegrees(CurrentPoseTransform.Rotator().Yaw,
+			                                              NextPoseTransform.Rotator().Yaw)};
 			const auto YawSpeed{DeltaYaw * AbsRateScale * FrameRate};
 
 			UAnimationBlueprintLibrary::AddFloatCurveKey(Sequence, RotationYawSpeedCurveName,

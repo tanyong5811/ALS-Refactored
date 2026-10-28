@@ -11,11 +11,12 @@ public class ALSExtras : ModuleRules
 		CppCompileWarningSettings.NonInlinedGenCppWarningLevel = WarningLevel.Warning;
 
 		PublicDependencyModuleNames.AddRange([
-			"Core", "CoreUObject", "Engine", "AIModule", "ALS"
+			"Core", "CoreUObject", "Engine", "AIModule", "ALS",
+			"MC_GameplayCore" // The exported example character inherits core virtual/interface methods.
 		]);
 
 		PrivateDependencyModuleNames.AddRange([
-			"EnhancedInput", "ALSCamera"
+			"EnhancedInput", "ALSCamera", "InputCore", "SlateCore"
 		]);
 	}
 }

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "GameFramework/Character.h"
+#include "Character/MC_Character.h"
 #include "State/AlsLocomotionState.h"
 #include "State/AlsMantlingState.h"
 #include "State/AlsMovementBaseState.h"
@@ -22,7 +22,7 @@ class UAlsMantlingSettings;
 class UAlsAnimationInstanceSettings;
 
 UCLASS(AutoExpandCategories = ("Settings|Als Character", "Settings|Als Character|Desired State"))
-class ALS_API AAlsCharacter : public ACharacter
+class ALS_API AAlsCharacter : public AMC_Character
 {
 	GENERATED_BODY()
 
@@ -149,6 +149,10 @@ protected:
 public:
 	// 构造函数：使用 ALS 的自定义 movement component 子类。
 	explicit AAlsCharacter(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	// Navigation-driven integrations can keep capsule translation under the movement component alone.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Settings|Als Character")
+	bool bEnableLocomotionCurveOffset{true};
 
 #if WITH_EDITOR
 	// 编辑器属性变更回调：用于限制不允许被编辑的属性（保证旋转/控制设置一致性）。

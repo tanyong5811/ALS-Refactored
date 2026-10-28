@@ -1,6 +1,7 @@
 #include "Modifiers/AlsAnimationModifier_InitMoveCycles.h"
 
 #include "Animation/AnimSequence.h"
+#include "Animation/AnimData/IAnimationDataController.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(AlsAnimationModifier_InitMoveCycles)
 
@@ -32,7 +33,7 @@ void UAlsAnimationModifier_InitMoveCycles::OnApply_Implementation(UAnimSequence*
 	const float LeftFeetFallTime = WrapTime(LeftFeetDownTime - FMath::Max(0.0f, FootFallLookBackTime));
 	const float RightFeetFallTime = WrapTime(RightFeetDownTime - FMath::Max(0.0f, FootFallLookBackTime));
 
-	// Set interpolation to linear
+	// Bone interpolation stays linear; FootPlanted has its own constant curve keys.
 	Sequence->Interpolation = EAnimInterpolationType::Linear;
 
 	// --- MoveSpeed Curve ---
@@ -86,9 +87,7 @@ void UAlsAnimationModifier_InitMoveCycles::OnApply_Implementation(UAnimSequence*
 		// - look-back time     -> -LookBack (left), +LookBack (right)
 		const float FootFallCurveValue = FMath::Clamp(FootFallLookBackTime, 0.0f, 1.0f);
 
-		// Loop seam: linear segment from last key time (in cycle order) across t=SequenceLength to first key time (t=0).
-		// Without an explicit key at t=0, the engine extrapolates before the first internal key and frame 0 can match
-		// the value at the first key (e.g. same as RightFeetFallTime) instead of matching the last frame.
+		// Explicit boundary keys preserve the foot state across the loop seam.
 		struct FFootKey
 		{
 			float Time;
@@ -122,6 +121,16 @@ void UAlsAnimationModifier_InitMoveCycles::OnApply_Implementation(UAnimSequence*
 
 		UAnimationBlueprintLibrary::AddFloatCurveKey(Sequence, FeetPositionCurveName,
 		                                             UE_REAL_TO_FLOAT(SequenceLength), LoopBoundaryValue);
+
+		// Foot contact is a discrete state. Hold each value until the next event,
+		// rather than interpolating between planted and falling states.
+		const FAnimationCurveIdentifier CurveId{FeetPositionCurveName, ERawCurveTrackTypes::RCT_Float};
+		auto ConstantKeys = Sequence->GetDataModel()->GetFloatCurve(CurveId).FloatCurve.GetCopyOfKeys();
+		for (auto& Key : ConstantKeys)
+		{
+			Key.InterpMode = RCIM_Constant;
+		}
+		Sequence->GetController().SetCurveKeys(CurveId, ConstantKeys);
 
 		UAnimationBlueprintLibrary::FinalizeBoneAnimation(Sequence);
 	}

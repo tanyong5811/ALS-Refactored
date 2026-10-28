@@ -39,6 +39,10 @@
 	],
 	"Plugins": [
 		{
+			"Name": "MC_GameplayCore",
+			"Enabled": true
+		},
+		{
 			"Name": "ACLPlugin",
 			"Enabled": true
 		},

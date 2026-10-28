@@ -538,6 +538,7 @@ void AAlsCharacter::RefreshTurnInPlaceCurveOffset()
 
 void AAlsCharacter::RefreshLocomotionCurveOffset()
 {
+	if (!bEnableLocomotionCurveOffset) return;
 	// 仅服务器权威推胶囊；转身进行中不叠移动补偿，避免双算。
 	if (GetLocalRole() < ROLE_Authority || bTurnInPlaceCurveOffsetActive)
 	{
